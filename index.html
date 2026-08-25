@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scool Management</title>
+
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+
+    <!-- Politique de sécurité modifiée pour permettre la correction orthographique -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: gap: content:; 
+           script-src * 'self' 'unsafe-inline' 'unsafe-eval'; 
+           connect-src * 'self' ws: wss:; 
+           style-src * 'self' 'unsafe-inline'; 
+           img-src * 'self' data: blob: file:; 
+           font-src * 'self' data:; 
+           media-src * 'self' data:;
+           frame-ancestors 'none';"
+    />
+
+    <!-- Métadonnées supplémentaires pour les APIs modernes -->
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="msapplication-TileColor" content="#000000" />
+
+    <!-- Important pour la correction automatique et la saisie -->
+    <meta name="apple-mobile-web-app-title" content="Scool Manager" />
+    <meta name="application-name" content="Scool Manager" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

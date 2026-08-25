@@ -1,0 +1,84 @@
+appId: com.cellsflux.scoolmanager
+productName: Scool Manager
+
+protocols:
+  - name: Scool Manager Protocol
+    schemes:
+      - scoolmanager
+
+directories:
+  buildResources: resources
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - "!**/.vscode/*"
+  - "!src/*"
+  - "!electron.vite.config.{js,ts,mjs,cjs}"
+  - "!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}"
+  - "!{.env,.env.*,.npmrc,pnpm-lock.yaml}"
+  - "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
+
+asarUnpack:
+  - resources/**
+
+win:
+  executableName: Scool Manager
+  icon: resources/icon.ico
+
+  fileAssociations:
+    - ext: scx
+      name: Fichier Scool Manager
+      description: Fichier personnalisé pour Scool Manager
+      role: Editor
+      icon: resources/scx.ico
+
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+
+mac:
+  entitlementsInherit: resources/build/entitlements.mac.plist
+
+  extendInfo:
+    NSCameraUsageDescription: Application requests access to the device's camera.
+    NSMicrophoneUsageDescription: Application requests access to the device's microphone.
+    NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
+    NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+
+  fileAssociations:
+    - ext: scx
+      name: Fichier Scool Manager
+      role: Editor
+      icon: resources/scx.icns
+
+  notarize: false
+
+dmg:
+  artifactName: ${name}-${version}.${ext}
+
+linux:
+  target:
+    - AppImage
+    - snap
+    - deb
+
+  maintainer: cellsflux.com
+  category: Education
+
+  fileAssociations:
+    - ext: scx
+      name: Fichier Scool Manager
+      mimeType: application/x-scool-manager
+      icon: resources/scx.png
+
+appImage:
+  artifactName: ${name}-${version}.${ext}
+
+npmRebuild: true
+
+publish:
+  provider: generic
+  url: https://cellsflux.com/scool/auto-updates
