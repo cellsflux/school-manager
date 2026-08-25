@@ -10,7 +10,7 @@ import {
   onFileOpen,
   onAuthResult,
 } from "./utils/deepLinking";
-import { startLogin } from "./utils/oauthClient";
+import { initializeUpdater } from "./utils/updater";
 
 export const __filename = fileURLToPath(import.meta.url);
 export const __dirname = path.dirname(__filename);
@@ -58,6 +58,7 @@ if (!gotTheLock) {
     Menu.setApplicationMenu(null);
     registerModules();
     createWindow();
+    initializeUpdater();
 
     if (mainWindow) {
       initializeDeepLink(mainWindow);

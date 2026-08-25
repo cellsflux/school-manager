@@ -80,5 +80,6 @@ appImage:
 npmRebuild: true
 
 publish:
-  provider: generic
-  url: https://cellsflux.com/scool/auto-updates
+  provider: github
+  owner: cellsflux
+  repo: school-manager

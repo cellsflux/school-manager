@@ -11,6 +11,7 @@ import Dashboard from "../../screen/Dashboard";
 import { AppearanceSettings } from "../../screen/settings/AppearanceSettings";
 import { PublicLayout } from "./PublicLayout";
 import SettingScreen from "../../screen/settings";
+import StudenScreen from "@/screen/student";
 // Importez vos autres screens ici
 
 export default function Navigations() {
@@ -28,11 +29,10 @@ export default function Navigations() {
         {/* Toutes les routes protégées avec le layout */}
         <Route element={<ProtectedLayout />}>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/students" element={<StudenScreen />} />
           <Route path="/settings/appearance" element={<AppearanceSettings />} />
-          {/* Ajoutez ici toutes vos routes protégées */}
-          {/* <Route path="/profile" element={<Profile />} /> */}
-          {/* <Route path="/users" element={<Users />} /> */}
-          <Route path="/settings/*" element={<SettingScreen />} />
+
+          <Route path="/settings" element={<SettingScreen />} />
           {/* Route Not Found - Peut être publique ou protégée */}
           <Route path="*" element={<NotFound />} />
         </Route>
