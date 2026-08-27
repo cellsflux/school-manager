@@ -9,13 +9,38 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build Windows
-    runs-on: windows-latest
+  build:
+    name: Build
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            platform: windows
+            artifact_name: scool-manager-windows
+            build_command: build:win:publish
+          - os: macos-latest
+            platform: macos
+            artifact_name: scool-manager-macos
+            build_command: build:mac
+          - os: ubuntu-latest
+            platform: linux
+            artifact_name: scool-manager-linux
+            build_command: build:linux
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+        shell: bash
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -31,7 +56,64 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build and publish
-        run: pnpm exec electron-builder --win --publish always
+      - name: Build ${{ matrix.platform }}
+        run: pnpm run ${{ matrix.build_command }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_VERSION: ${{ env.VERSION }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-${{ env.VERSION }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.snap
+            dist/*.blockmap
+            dist/*.yml
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "Scool Manager v${{ env.VERSION }}"
+          body: |
+            ## 🚀 Scool Manager v${{ env.VERSION }}
+
+            ### 📦 Downloads
+            - **Windows**: `Scool Manager-${{ env.VERSION }}-setup.exe`
+            - **macOS**: `Scool Manager-${{ env.VERSION }}.dmg`
+            - **Linux**: `Scool Manager-${{ env.VERSION }}.AppImage`
+
+            ### 📥 Installation
+            Download the appropriate installer for your platform.
+          files: artifacts/**/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

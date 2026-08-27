@@ -112,7 +112,17 @@ export function TopMenu() {
       description: "Changer le thème",
       leftSection:
         colorScheme === "dark" ? <Sun size={20} /> : <Moon size={20} />,
-      onClick: toggleColorScheme,
+      onClick: () => {
+        toggleColorScheme();
+        // Synchroniser avec Tailwind CSS
+        if (colorScheme === "dark") {
+          document.documentElement.classList.remove("dark");
+          document.documentElement.classList.add("light");
+        } else {
+          document.documentElement.classList.remove("light");
+          document.documentElement.classList.add("dark");
+        }
+      },
     },
     {
       id: "github",

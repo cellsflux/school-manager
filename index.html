@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr" class="light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
@@ -8,18 +8,64 @@
 
     <meta http-equiv="X-UA-Compatible" content="ie=edge" />
 
-    <!-- Politique de sécurité modifiée pour permettre la correction orthographique -->
+    <!-- 
+      Politique de sécurité corrigée :
+      - Suppression de frame-ancestors dans la meta (ignoré)
+      - CSP plus restrictive mais fonctionnelle pour Electron
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: gap: content:; 
-           script-src * 'self' 'unsafe-inline' 'unsafe-eval'; 
-           connect-src * 'self' ws: wss:; 
-           style-src * 'self' 'unsafe-inline'; 
-           img-src * 'self' data: blob: file:; 
-           font-src * 'self' data:; 
-           media-src * 'self' data:;
-           frame-ancestors 'none';"
+      content="
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' 'unsafe-eval';
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data: blob:;
+        font-src 'self' data:;
+        connect-src 'self' ws: wss: http://localhost:* https://localhost:*;
+        media-src 'self' data:;
+        object-src 'none';
+        base-uri 'self';
+        form-action 'self';
+      "
     />
+
+    <!-- Script pour éviter le flash du thème avant le chargement de React -->
+    <script>
+      (function () {
+        // Récupérer le thème stocké
+        const storedTheme = localStorage.getItem("mantine-color-scheme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)",
+        ).matches;
+
+        // Déterminer le thème initial
+        let isDark = false;
+        if (storedTheme === "dark") {
+          isDark = true;
+        } else if (storedTheme === "light") {
+          isDark = false;
+        } else if (prefersDark) {
+          isDark = true;
+        }
+
+        // Appliquer la classe au html
+        if (isDark) {
+          document.documentElement.classList.add("dark");
+          document.documentElement.classList.remove("light");
+        } else {
+          document.documentElement.classList.add("light");
+          document.documentElement.classList.remove("dark");
+        }
+
+        // Stocker la valeur initiale si pas définie
+        if (!storedTheme) {
+          localStorage.setItem(
+            "mantine-color-scheme",
+            isDark ? "dark" : "light",
+          );
+        }
+      })();
+    </script>
 
     <!-- Métadonnées supplémentaires pour les APIs modernes -->
     <meta name="theme-color" content="#000000" />

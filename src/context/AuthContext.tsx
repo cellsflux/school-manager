@@ -3,6 +3,7 @@ import React, {
   useContext,
   useState,
   useEffect,
+  useCallback,
   type ReactNode,
 } from "react";
 import type { AuthContextType, User } from "../types/auth.types";
@@ -21,20 +22,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const connector = useConnecter();
   const ActionsUser = connector.user;
 
+  // ✅ Correction 1: isMounted pour éviter les fuites mémoire
   useEffect(() => {
+    let isMounted = true;
+
     const checkAuth = async () => {
       try {
-        // Récupérer l'utilisateur stocké
         const res = await ActionsUser.getProfile();
-        const storedUser = res.data;
+        const storedUser = res?.data;
 
-        if (storedUser) {
-          // Vérifier si l'utilisateur a les données nécessaires
+        if (storedUser && isMounted) {
+          // ✅ Correction 2: Vérification plus robuste
           if (storedUser.id && storedUser.email && storedUser.token) {
             setUser(storedUser);
             console.log("✅ Utilisateur restauré depuis le stockage");
           } else {
-            // Si les données sont incomplètes, on supprime
             await ActionsUser.securedeletemenu();
             console.log("⚠️ Données utilisateur incomplètes, suppression");
           }
@@ -43,35 +45,43 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       } catch (error) {
         console.error("❌ Erreur lors du chargement:", error);
-        // En cas d'erreur, on nettoie pour éviter un état inconsistent
-        await ActionsUser.securedeletemenu();
+        if (isMounted) {
+          await ActionsUser.securedeletemenu();
+        }
       } finally {
-        // Toujours passer isLoading à false
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     checkAuth();
-  }, []); // Dépendances vides pour n'exécuter qu'au montage
 
-  const login = async (userData: User) => {
-    try {
-      // Vérifier que les données sont complètes
-      if (!userData.id || !userData.email || !userData.token) {
-        throw new Error("Données utilisateur incomplètes");
+    return () => {
+      isMounted = false;
+    };
+  }, [ActionsUser]); // ✅ Correction 3: Ajout de la dépendance
+
+  // ✅ Correction 4: useCallback pour éviter les re-rendus inutiles
+  const login = useCallback(
+    async (userData: User) => {
+      try {
+        if (!userData.id || !userData.email || !userData.token) {
+          throw new Error("Données utilisateur incomplètes");
+        }
+
+        await ActionsUser.create({ ...userData });
+        setUser(userData);
+        console.log("✅ Utilisateur connecté et stocké");
+      } catch (error) {
+        console.error("❌ Erreur lors du stockage:", error);
+        throw new Error("Erreur lors de la sauvegarde des données");
       }
+    },
+    [ActionsUser],
+  );
 
-      // Stocker l'utilisateur dans le stockage persistant
-      await ActionsUser.create({ ...userData });
-      setUser(userData);
-      console.log("✅ Utilisateur connecté et stocké");
-    } catch (error) {
-      console.error("❌ Erreur lors du stockage:", error);
-      throw new Error("Erreur lors de la sauvegarde des données");
-    }
-  };
-
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       if (user?.id) {
         await ActionsUser.disconnect(user.id);
@@ -80,10 +90,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log("👋 Utilisateur déconnecté");
     } catch (error) {
       console.error("❌ Erreur lors de la déconnexion:", error);
-      // Même en cas d'erreur, on nettoie l'état local
       setUser(null);
     }
-  };
+  }, [ActionsUser, user?.id]);
 
   const value: AuthContextType = {
     user,
@@ -96,7 +105,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// Hook personnalisé pour utiliser le contexte
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (context === undefined) {

@@ -268,7 +268,7 @@ export default function Dashboard() {
                     justify="space-between"
                     wrap="nowrap"
                     p="xs"
-                    className=" cursor-pointer hover:bg-muted"
+                    className=" cursor-pointer hover:bg-muted dark:hover:bg-black/80"
                     style={{
                       borderRadius: "var(--radius-md)",
                       // background: "var(--muted)",
