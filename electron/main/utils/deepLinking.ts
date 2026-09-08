@@ -206,11 +206,7 @@ function handleIncomingUrl(url: string): void {
   focusMainWindow();
   notifyDeepLinkCallbacks(data);
 
-  if (
-    data.success &&
-    data.action === "auth" &&
-    typeof data.params.code === "string"
-  ) {
+  if (data.success && data.action === "auth" && typeof data.params.code === "string") {
     void runAuthExchange(data.params.code, data.params.state);
   }
 }

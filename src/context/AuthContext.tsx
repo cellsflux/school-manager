@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import type { AuthContextType, User } from "../types/auth.types";
 import { useConnecter } from "@/hooks/useConnecter";
+import { useMantineColorScheme } from "@mantine/core";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 

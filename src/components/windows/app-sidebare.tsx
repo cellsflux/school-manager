@@ -556,28 +556,6 @@ export function Sidebar({
             }
           />
         )*/}
-
-        <Button
-          className="bg-transparent hover:bg-transparent "
-          color={"dark"}
-          variant="subtle"
-          leftSection={<Avatar src={user?.photo} />}
-          justify={opened ? "flex-start" : "center"}
-          fullWidth
-          //onClick={() => logout()}
-          style={{
-            padding: opened ? "8px 12px" : "6px 4px",
-            border: "none",
-            height: "auto",
-            minHeight: "40px",
-          }}
-        >
-          {opened && (
-            <Text size="md" fw={500} className=" capitalize">
-              {user?.fname} {user?.lname}
-            </Text>
-          )}
-        </Button>
       </Box>
 
       {/* Pied de la sidebar */}

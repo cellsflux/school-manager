@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from "react";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import {
   Container,
   Grid,
@@ -14,6 +14,7 @@ import {
   Badge,
 } from "@mantine/core";
 import { School, Users, Book, TrendingUp, Clock } from "lucide-react";
+import { useConnecter } from "@/hooks/useConnecter";
 
 // -----------------------------------------------------------------------
 // Lazy imports : chaque graphique est un chunk séparé, chargé à la demande
@@ -134,7 +135,7 @@ function KpiCard({
           variant="transparent"
           className="bg-var(--chart-scale-pattern-color) dark:bg-transparent"
         >
-          <Icon size={20} strokeWidth={1.7} color="var(--chart-2)" />
+          <Icon size={20} strokeWidth={1.7} />
         </ThemeIcon>
         <Stack gap={2}>
           <Text size="xs" c="" className=" dark:text-white">
@@ -184,6 +185,20 @@ function ListSkeleton() {
 // -----------------------------------------------------------------------
 
 export default function Dashboard() {
+  const { etablissement } = useConnecter();
+
+  const [school, setSchool] = useState<any>();
+
+  useEffect(() => {
+    loadEtablissment();
+  }, []);
+
+  const loadEtablissment = async () => {
+    const id = await localStorage.getItem("__id_");
+    const res = await etablissement.getEts(id as string);
+    setSchool(res.etablissement as any);
+  };
+
   return (
     <Container
       size="xl"
@@ -198,7 +213,7 @@ export default function Dashboard() {
           className=" dark:text-white/90"
           fz={{ base: "xl", sm: "1.75rem" }}
         >
-          Tableau de bord scolaire
+          Tableau de bord pour {school?.name ?? ""}
         </Title>
         <Text size="sm" className=" dark:text-white/70">
           Vue d'ensemble des performances et de l'activité de l'établissement

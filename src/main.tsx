@@ -13,6 +13,7 @@ import { NavigationProgress } from "@mantine/nprogress";
 //STYLES
 import "@mantine/core/styles.css";
 import "./styles/index.css";
+
 import "./index.css";
 {
   /** Extenssion styles */
@@ -24,6 +25,7 @@ import "@mantine/notifications/styles.css";
 import "@mantine/schedule/styles.css";
 import "@mantine/dates/styles.css";
 import { AuthProvider } from "./context/AuthContext";
+import { FaceDetectionProvider } from "./context/FaceDetectionContext";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -34,7 +36,9 @@ createRoot(document.getElementById("root")!).render(
         <AuthProvider>
           <MantineProvider>
             <ModalsProvider>
-              <App />
+              <FaceDetectionProvider autoLoad={true}>
+                <App />
+              </FaceDetectionProvider>
             </ModalsProvider>
           </MantineProvider>
         </AuthProvider>

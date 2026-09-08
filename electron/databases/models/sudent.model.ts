@@ -13,6 +13,7 @@ const studentSchema = ormSchema(
     fm_name: { type: String },
     // Photo
     picture: { type: String },
+    description: { type: Array } /**appreinte du visage */,
     // Naissance
     dateOfBirth: { type: "date" },
     placeOfBirth: { type: String },

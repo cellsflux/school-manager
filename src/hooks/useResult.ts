@@ -8,6 +8,7 @@ export function useResultSIgn(onData: (data: any) => void) {
 
   useEffect(() => {
     const unsubscribe = window.events.on("auth:success", (data: any) => {
+      console.log(data);
       savedCallback.current(data);
     });
 

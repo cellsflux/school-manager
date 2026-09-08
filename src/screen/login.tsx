@@ -23,7 +23,7 @@ export const Login: React.FC = () => {
   const location = useLocation();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { user, screen } = useConnecter();
+  const { user, screen, etablissement } = useConnecter();
 
   const [dataFromdeep, setDataFromdeep] = useState();
 
@@ -44,7 +44,9 @@ export const Login: React.FC = () => {
   //**recevoir le donne via le token */
   useResultSIgn(async (data) => {
     setDataFromdeep(data.user);
-    if (data.accessToken && data.user) {
+    if ((data.accessToken && data.user, data.etablissement)) {
+      await localStorage.setItem("__id_", data!.etablissement!.id);
+      await etablissement.init(data);
       await login({
         id: data.user.id,
         fname: data.user.fname,
@@ -55,6 +57,7 @@ export const Login: React.FC = () => {
         photo: data.user.photo,
         gender: data.user.gender,
       });
+
       navigate("/", { replace: true });
     } else {
       setError("error lors de l'authetification reesayez svp");

@@ -15,9 +15,16 @@ export default defineConfig({
     },
   },
 
+  optimizeDeps: {
+    include: ["@vladmandic/face-api"],
+  },
+
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    commonjsOptions: {
+      transformMixedEsModules: true,
+    },
   },
 
   publicDir: "resources",

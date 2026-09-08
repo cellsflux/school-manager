@@ -11,6 +11,10 @@ import {
   onAuthResult,
 } from "./utils/deepLinking";
 import { initializeUpdater } from "./utils/updater";
+import {
+  ensureMacCameraAccess,
+  setupCameraPermissions,
+} from "./utils/camera.permission";
 
 export const __filename = fileURLToPath(import.meta.url);
 export const __dirname = path.dirname(__filename);
@@ -40,7 +44,8 @@ if (!gotTheLock) {
       webPreferences: {
         preload: path.join(__dirname, "../preload/preload.mjs"),
         contextIsolation: true,
-        nodeIntegration: false,
+        nodeIntegration: true,
+        //webSecurity: false, // 🔥 Désactiver la sécurité pour les images
       },
     });
 
@@ -53,12 +58,14 @@ if (!gotTheLock) {
     return mainWindow;
   }
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     AppDatabases();
     Menu.setApplicationMenu(null);
     registerModules();
     createWindow();
     initializeUpdater();
+    setupCameraPermissions();
+    await ensureMacCameraAccess();
 
     if (mainWindow) {
       initializeDeepLink(mainWindow);
@@ -74,10 +81,10 @@ if (!gotTheLock) {
         mainWindow?.webContents.send("file-opened", data);
       });
 
-      // ✅ nouveau : résultat de la connexion OAuth (une fois le code PKCE
-      // échangé contre accessToken/refreshToken/user). C'est ICI que tu
-      // récupères enfin les données utilisateur — pas dans onDeepLink, qui
-      // ne voit que le `code` brut.
+      // ✅ résultat de la connexion OAuth (une fois le code PKCE échangé
+      // contre accessToken/refreshToken/user/etablissement). C'est ICI que
+      // tu récupères les données utilisateur ET l'établissement sélectionné
+      // sur le web — pas dans onDeepLink, qui ne voit que le `code` brut.
       onAuthResult((result) => {
         if (!result.success || !result.data) {
           console.log(result);
@@ -85,8 +92,10 @@ if (!gotTheLock) {
           mainWindow?.webContents.send("auth:error", result.error);
           return;
         }
-        const { accessToken, refreshToken, user } = result.data;
+
+        const { accessToken, refreshToken, user, etablissement } = result.data;
         console.log("✅ Utilisateur connecté:", user);
+        console.log("🏫 Établissement connecté:", etablissement);
 
         // Le refresh token est sensible: on le chiffre avant stockage
         // (safeStorage utilise le trousseau macOS / DPAPI Windows / libsecret
@@ -95,13 +104,18 @@ if (!gotTheLock) {
         if (safeStorage.isEncryptionAvailable()) {
           const encrypted = safeStorage.encryptString(refreshToken);
           // TODO: persister `encrypted` (buffer) via AppDatabases() ou un
-          // fichier dédié dans app.getPath("userData").
+          // fichier dédié dans app.getPath("userData"), avec l'id de
+          // l'établissement connecté pour pouvoir gérer plusieurs comptes.
           console.log("🔐 Refresh token chiffré, prêt à être persisté.");
         }
 
         // L'access token est éphémère (15 min): on le transmet directement
-        // au renderer pour la session en cours, pas besoin de le persister.
-        mainWindow?.webContents.send("auth:success", { accessToken, user });
+        // au renderer avec l'établissement, pas besoin de les persister ici.
+        mainWindow?.webContents.send("auth:success", {
+          accessToken,
+          user,
+          etablissement,
+        });
       });
     }
 

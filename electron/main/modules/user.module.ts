@@ -17,7 +17,6 @@ interface User {
 export const userModule = {
   getProfile: async (): Promise<{ data: User | null }> => {
     const user: any[] = await userModel.find();
-    console.log(user);
 
     return {
       data: user[0],
@@ -26,9 +25,7 @@ export const userModule = {
   create: async (userData: User) => {
     try {
       const userexite = await userModel.find({});
-      console.log("\n \n\n\n\n\n\n\n\n THis is User creation detecte ");
 
-      console.log(userexite);
       if (userexite.length > 0) {
         return { user: userexite[0] };
       }

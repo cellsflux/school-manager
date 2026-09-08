@@ -1,6 +1,6 @@
 // src/theme/AppThemeProvider.tsx
 import { MantineProvider, createTheme } from "@mantine/core";
-import { useMemo, useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo } from "react";
 import { useThemeSettings } from "./useThemeSettings";
 import type { MantineThemeOverride } from "@mantine/core";
 import type { ReactNode } from "react";
@@ -9,6 +9,7 @@ import type {
   FontStackKey,
   ShadowIntensity,
   LetterSpacing,
+  ThemeSettings,
 } from "./themeSettings.types";
 
 const scaleToRem: Record<ComponentSize, string> = {
@@ -19,10 +20,22 @@ const scaleToRem: Record<ComponentSize, string> = {
   xl: "1.25rem",
 };
 
-const compactSpacing = {
+const compactSpacing: Record<ComponentSize, string> = {
   xs: "0.375rem",
   sm: "0.5rem",
   md: "0.75rem",
+  lg: "1rem",
+  xl: "1.5rem",
+};
+
+// Mappe les tailles de radius de l'app sur --radius (celle déjà définie dans
+// globals.css). Tout le reste (--radius-sm/md/lg/xl/2xl/3xl/4xl) est dérivé
+// automatiquement via les `calc(var(--radius) * n)` du bloc @theme inline :
+// on n'a donc besoin de piloter qu'UNE seule variable.
+const radiusToRem: Record<ComponentSize, string> = {
+  xs: "0.25rem",
+  sm: "0.375rem",
+  md: "0.625rem",
   lg: "1rem",
   xl: "1.5rem",
 };
@@ -67,115 +80,104 @@ const letterSpacingMap: Record<LetterSpacing, string> = {
   relaxed: "0.015em",
 };
 
+/**
+ * Pousse les réglages courants dans les variables CSS RÉELLEMENT utilisées
+ * par globals.css / shadcn (--radius, --primary, --ring, --font-sans,
+ * --chart-*...), plutôt que dans des variables inventées. Comme ces
+ * variables sont déjà celles que consomme le bloc `@theme inline` et vos
+ * composants shadcn/Tailwind, tout se met à jour en live sans rien changer
+ * côté Tailwind.
+ *
+ * Les couleurs sont rebranchées sur les variables Mantine déjà posées sur
+ * :root par MantineProvider (--mantine-color-{name}-{shade}) : une seule
+ * source de vérité, pas de duplication de palette.
+ *
+ * Limite connue : --primary-foreground n'est pas recalculé ici (ce serait
+ * un calcul de contraste, impossible à faire en CSS pur) — on garde la
+ * valeur claire/sombre déjà définie dans globals.css pour light/dark, qui
+ * reste lisible sur la plupart des teintes Mantine à la nuance 6.
+ * De même, --shadow-* n'existe pas dans ce globals.css (shadcn utilise les
+ * ombres Tailwind par défaut) : `shadowIntensity` ne s'applique donc qu'aux
+ * composants Mantine via `theme.shadows`, pas aux éléments Tailwind purs.
+ */
+function applyCssVariables(settings: ThemeSettings) {
+  const root = document.documentElement;
+
+  const primary = `var(--mantine-color-${settings.primaryColor}-6)`;
+  const ring = `var(--mantine-color-${settings.primaryColor}-5)`;
+
+  const vars: Record<string, string> = {
+    "--radius": radiusToRem[settings.radius],
+
+    "--font-sans": fontStacks[settings.fontFamily],
+    "--font-heading": fontStacks[settings.headingFontFamily],
+
+    "--primary": primary,
+    "--sidebar-primary": primary,
+    "--ring": ring,
+    "--sidebar-ring": ring,
+
+    // Palette de charts dérivée des nuances Mantine de la couleur primaire,
+    // pour rester cohérent avec le "Blue sky theme" déjà en place (clair
+    // -> foncé de chart-1 à chart-5).
+    "--chart-1": `var(--mantine-color-${settings.primaryColor}-2)`,
+    "--chart-2": `var(--mantine-color-${settings.primaryColor}-4)`,
+    "--chart-3": `var(--mantine-color-${settings.primaryColor}-6)`,
+    "--chart-4": `var(--mantine-color-${settings.primaryColor}-7)`,
+    "--chart-5": `var(--mantine-color-${settings.primaryColor}-8)`,
+  };
+
+  for (const [key, value] of Object.entries(vars)) {
+    root.style.setProperty(key, value);
+  }
+
+  // Taille de police / interlettrage globaux : appliqués directement sur
+  // <body> pour que tout le document en hérite (composants Mantine ET
+  // éléments Tailwind purs).
+  document.body.style.fontFamily = "var(--font-sans)";
+  document.body.style.fontSize = scaleToRem[settings.scale];
+  document.body.style.letterSpacing = letterSpacingMap[settings.letterSpacing];
+}
+
+/**
+ * Synchronise la classe `.dark` sur <html> avec `settings.colorScheme`.
+ * C'est cette classe que le `@custom-variant dark (&:is(.dark *))` de
+ * globals.css utilise — le mécanisme interne de Mantine
+ * (`data-mantine-color-scheme`) ne suffit pas à faire réagir vos classes
+ * `dark:` Tailwind/shadcn.
+ */
+function useSyncDarkClass(colorScheme: ThemeSettings["colorScheme"]) {
+  useEffect(() => {
+    const root = document.documentElement;
+
+    if (colorScheme === "dark") {
+      root.classList.add("dark");
+      return;
+    }
+    if (colorScheme === "light") {
+      root.classList.remove("dark");
+      return;
+    }
+
+    // "auto" : on suit la préférence système, comme le fait Mantine.
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    root.classList.toggle("dark", mql.matches);
+
+    const listener = (event: MediaQueryListEvent) => {
+      root.classList.toggle("dark", event.matches);
+    };
+    mql.addEventListener("change", listener);
+    return () => mql.removeEventListener("change", listener);
+  }, [colorScheme]);
+}
+
 export function AppThemeProvider({ children }: { children: ReactNode }) {
   const { settings } = useThemeSettings();
-  const [updateKey, setUpdateKey] = useState(0);
 
-  // Force update à chaque changement de settings
+  useSyncDarkClass(settings.colorScheme);
+
   useEffect(() => {
-    setUpdateKey((prev) => prev + 1);
-  }, [settings]);
-
-  // Appliquer les styles globaux instantanément
-  useEffect(() => {
-    // Supprimer l'ancien style
-    const oldStyle = document.getElementById("theme-global-styles");
-    if (oldStyle) oldStyle.remove();
-
-    const style = document.createElement("style");
-    style.id = "theme-global-styles";
-    style.textContent = `
-      /* Reset et application globale */
-      * {
-        transition: all 0.15s ease-in-out !important;
-      }
-      
-      /* Application des polices */
-      body, button, input, textarea, select {
-        font-family: ${fontStacks[settings.fontFamily]} !important;
-      }
-      
-      /* Espacement des lettres */
-      body, button, input, textarea, select, .mantine-* {
-        letter-spacing: ${letterSpacingMap[settings.letterSpacing]} !important;
-      }
-      
-      /* Taille de police globale */
-      html {
-        font-size: ${
-          settings.scale === "xs"
-            ? "13px"
-            : settings.scale === "sm"
-              ? "14px"
-              : settings.scale === "md"
-                ? "16px"
-                : settings.scale === "lg"
-                  ? "18px"
-                  : "20px"
-        } !important;
-      }
-      
-      /* Radius global pour tous les composants Mantine */
-      .mantine-Paper-root,
-      .mantine-Card-root,
-      .mantine-Modal-root,
-      .mantine-Drawer-root,
-      .mantine-Button-root,
-      .mantine-Input-wrapper,
-      .mantine-Badge-root,
-      .mantine-Avatar-root,
-      .mantine-Tabs-tab,
-      .mantine-Alert-root,
-      .mantine-Notification-root,
-      .mantine-Tooltip-tooltip,
-      .mantine-Menu-dropdown,
-      .mantine-Select-dropdown,
-      .mantine-MultiSelect-dropdown {
-        border-radius: ${settings.radius}px !important;
-      }
-      
-      /* Ombres */
-      .mantine-Paper-root,
-      .mantine-Card-root,
-      .mantine-Menu-dropdown,
-      .mantine-Select-dropdown {
-        box-shadow: ${shadowSets[settings.shadowIntensity].md} !important;
-      }
-      
-      /* Couleurs primaires */
-      .mantine-Button-root[data-variant="filled"] {
-        background-color: var(--mantine-color-${settings.primaryColor}-6) !important;
-      }
-      
-      .mantine-Button-root[data-variant="filled"]:hover {
-        background-color: var(--mantine-color-${settings.primaryColor}-7) !important;
-      }
-      
-      .mantine-Button-root[data-variant="light"] {
-        color: var(--mantine-color-${settings.primaryColor}-6) !important;
-        background-color: var(--mantine-color-${settings.primaryColor}-0) !important;
-      }
-      
-      .mantine-Button-root[data-variant="light"]:hover {
-        background-color: var(--mantine-color-${settings.primaryColor}-1) !important;
-      }
-      
-      /* Badges */
-      .mantine-Badge-root[data-variant="filled"] {
-        background-color: var(--mantine-color-${settings.primaryColor}-6) !important;
-      }
-      
-      /* Focus */
-      .mantine-*:focus-visible {
-        outline: 2px solid var(--mantine-color-${settings.primaryColor}-5) !important;
-        outline-offset: 2px !important;
-      }
-    `;
-    document.head.appendChild(style);
-
-    return () => {
-      style.remove();
-    };
+    applyCssVariables(settings);
   }, [settings]);
 
   const theme: MantineThemeOverride = useMemo(
@@ -272,11 +274,7 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <MantineProvider
-      key={updateKey}
-      theme={theme}
-      defaultColorScheme={settings.colorScheme}
-    >
+    <MantineProvider theme={theme} defaultColorScheme={settings.colorScheme}>
       {children}
     </MantineProvider>
   );

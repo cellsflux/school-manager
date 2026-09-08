@@ -1,11 +1,6 @@
 // electron/main/utils/oauthClient.ts
 import { shell } from "electron";
-import {
-  generateCodeVerifier,
-  generateCodeChallenge,
-  generateState,
-} from "./pkce";
-import axios from "axios";
+import { generateCodeVerifier, generateCodeChallenge, generateState } from "./pkce";
 
 // À adapter à ton environnement (dev vs prod). Peut aussi être lu depuis un
 // fichier de config / variable d'env packagée avec l'app.
@@ -30,6 +25,31 @@ export type ExchangeResult = {
     isEmailVerified: boolean;
     isProfileComplete: boolean;
     provider: "password" | "google" | "apple";
+  };
+  // L'établissement choisi par l'utilisateur sur le tableau de bord web
+  // avant de cliquer "Connecter à Scool Manager" — jamais null ici: le
+  // backend refuse de générer un code d'autorisation sans établissement
+  // sélectionné (voir POST /api/oauth/code côté serveur).
+  etablissement: {
+    id: string;
+    name: string;
+    slug: string;
+    logo: string;
+    type: string;
+    pays: string;
+    province: string;
+    ville: string;
+    adresseComplete: string;
+    phone: string;
+    email: string;
+    website: string;
+    description: string;
+    matriculePrefix: string;
+    matriculeLength: number;
+    money: { name: string; symbole: string; Taux_dollar: string }[];
+    subscriptionStatus: "none" | "trial" | "active" | "expired";
+    trialEndsAt: string | null;
+    role: string | string[] | null;
   };
 };
 
@@ -74,16 +94,12 @@ export async function exchangeCode(
   state?: string,
 ): Promise<ExchangeResult> {
   if (!pending) {
-    throw new Error(
-      "Aucune tentative de connexion en cours (verifier manquant).",
-    );
+    throw new Error("Aucune tentative de connexion en cours (verifier manquant).");
   }
 
   if (state && state !== pending.state) {
     pending = null;
-    throw new Error(
-      "state invalide, tentative de connexion rejetée (anti-CSRF).",
-    );
+    throw new Error("state invalide, tentative de connexion rejetée (anti-CSRF).");
   }
 
   const verifier = pending.verifier;

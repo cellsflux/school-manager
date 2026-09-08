@@ -57,10 +57,10 @@ export const menuItems: MenuItem[] = [
         path: "/students",
       },
       {
-        id: "students-profiles",
-        icon: UserCircle,
-        label: "Profils",
-        path: "/students/profiles",
+        id: "students-add",
+        icon: Users,
+        label: "Ajouter un élève",
+        path: "/students/add",
       },
       {
         id: "students-enrollments",

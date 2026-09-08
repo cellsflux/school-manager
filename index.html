@@ -1,85 +1,99 @@
 <!doctype html>
-<html lang="fr" class="light">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
+
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
     <title>Scool Management</title>
 
     <meta http-equiv="X-UA-Compatible" content="ie=edge" />
 
-    <!-- 
-      Politique de sécurité corrigée :
-      - Suppression de frame-ancestors dans la meta (ignoré)
-      - CSP plus restrictive mais fonctionnelle pour Electron
+    <!--
+      Content Security Policy pour Electron + React + Vite.
+
+      Les directives originales sont conservées.
+      Les ressources externes HTTP/HTTPS sont autorisées
+      notamment pour les images, médias, fonts et API.
     -->
     <meta
       http-equiv="Content-Security-Policy"
       content="
         default-src 'self';
-        script-src 'self' 'unsafe-inline' 'unsafe-eval';
-        style-src 'self' 'unsafe-inline';
-        img-src 'self' data: blob:;
-        font-src 'self' data:;
-        connect-src 'self' ws: wss: http://localhost:* https://localhost:*;
-        media-src 'self' data:;
-        object-src 'none';
-        base-uri 'self';
-        form-action 'self';
+
+        script-src
+          'self'
+          'unsafe-inline'
+          'unsafe-eval';
+
+        style-src
+          'self'
+          'unsafe-inline'
+          http:
+          https:;
+
+        img-src
+          'self'
+          http:
+          https:
+          data:
+          blob:;
+
+        font-src
+          'self'
+          http:
+          https:
+          data:;
+
+        connect-src
+          'self'
+          ws:
+          wss:
+          http://localhost:*
+          https://localhost:*
+          http:
+          https:;
+
+        media-src
+          'self'
+          http:
+          https:
+          data:
+          blob:;
+
+        object-src
+          'none';
+
+        base-uri
+          'self';
+
+        form-action
+          'self';
       "
     />
 
-    <!-- Script pour éviter le flash du thème avant le chargement de React -->
-    <script>
-      (function () {
-        // Récupérer le thème stocké
-        const storedTheme = localStorage.getItem("mantine-color-scheme");
-        const prefersDark = window.matchMedia(
-          "(prefers-color-scheme: dark)",
-        ).matches;
+    <!-- Métadonnées supplémentaires -->
 
-        // Déterminer le thème initial
-        let isDark = false;
-        if (storedTheme === "dark") {
-          isDark = true;
-        } else if (storedTheme === "light") {
-          isDark = false;
-        } else if (prefersDark) {
-          isDark = true;
-        }
-
-        // Appliquer la classe au html
-        if (isDark) {
-          document.documentElement.classList.add("dark");
-          document.documentElement.classList.remove("light");
-        } else {
-          document.documentElement.classList.add("light");
-          document.documentElement.classList.remove("dark");
-        }
-
-        // Stocker la valeur initiale si pas définie
-        if (!storedTheme) {
-          localStorage.setItem(
-            "mantine-color-scheme",
-            isDark ? "dark" : "light",
-          );
-        }
-      })();
-    </script>
-
-    <!-- Métadonnées supplémentaires pour les APIs modernes -->
     <meta name="theme-color" content="#000000" />
+
     <meta name="apple-mobile-web-app-capable" content="yes" />
+
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+
     <meta name="format-detection" content="telephone=no" />
+
     <meta name="msapplication-TileColor" content="#000000" />
 
-    <!-- Important pour la correction automatique et la saisie -->
     <meta name="apple-mobile-web-app-title" content="Scool Manager" />
+
     <meta name="application-name" content="Scool Manager" />
   </head>
+
   <body>
     <div id="root"></div>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

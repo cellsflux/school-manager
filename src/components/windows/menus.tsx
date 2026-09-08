@@ -12,6 +12,7 @@ import {
   Text,
   Title,
   Image,
+  Avatar,
 } from "@mantine/core";
 import type { SpotlightActionData } from "@mantine/spotlight";
 import { spotlight } from "@mantine/spotlight";
@@ -55,6 +56,7 @@ export function TopMenu() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const { isAuthenticated } = useAuth();
+  const { logout, user } = useAuth();
 
   const theme = useMantineTheme();
   const { colorScheme, toggleColorScheme } = useMantineColorScheme();
@@ -90,6 +92,16 @@ export function TopMenu() {
   const isMac = systemInfo?.isMac || false;
   const isDevelopment = systemInfo?.isDevelopment || false;
 
+  useEffect(() => {
+    const root = document.documentElement;
+
+    root.classList.remove("dark", "light");
+
+    if (colorScheme === "dark") {
+      root.classList.add("dark");
+    }
+  }, [colorScheme]);
+
   // Actions passées à la modale de recherche
   const spotlightActions: SpotlightActionData[] = [
     {
@@ -112,16 +124,17 @@ export function TopMenu() {
       description: "Changer le thème",
       leftSection:
         colorScheme === "dark" ? <Sun size={20} /> : <Moon size={20} />,
-      onClick: () => {
-        toggleColorScheme();
-        // Synchroniser avec Tailwind CSS
+      onClick: async () => {
+        const root = window.document.documentElement;
+
+        root.classList.remove("dark", "light");
+
         if (colorScheme === "dark") {
-          document.documentElement.classList.remove("dark");
-          document.documentElement.classList.add("light");
+          root.classList.add("dark");
         } else {
-          document.documentElement.classList.remove("light");
-          document.documentElement.classList.add("dark");
+          root.classList.add("light");
         }
+        toggleColorScheme();
       },
     },
     {
@@ -400,6 +413,15 @@ export function TopMenu() {
                 <Terminal size={18} />
               </ActionIcon>
             </Tooltip>
+          )}
+
+          {user && (
+            <Avatar
+              size={"sm"}
+              title={user?.lname}
+              className=" cursor-pointer"
+              src={user.photo}
+            />
           )}
 
           {!isMac && windowsButtons}

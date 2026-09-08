@@ -12,6 +12,7 @@ import { AppearanceSettings } from "../../screen/settings/AppearanceSettings";
 import { PublicLayout } from "./PublicLayout";
 import SettingScreen from "../../screen/settings";
 import StudenScreen from "@/screen/student";
+import AddStudent from "@/screen/student/add";
 // Importez vos autres screens ici
 
 export default function Navigations() {
@@ -30,6 +31,7 @@ export default function Navigations() {
         <Route element={<ProtectedLayout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/students" element={<StudenScreen />} />
+          <Route path="/students/add" element={<AddStudent />} />
           <Route path="/settings/appearance" element={<AppearanceSettings />} />
 
           <Route path="/settings" element={<SettingScreen />} />
