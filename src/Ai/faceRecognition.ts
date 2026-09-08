@@ -9,7 +9,8 @@ let loadingPromise: Promise<void> | null = null;
 
 // ⚠️ Adapte ce chemin à l'endroit où tu sers réellement les modèles
 // (dossier /public/models -> accessible en prod via "/models")
-const MODEL_URL = "/models";
+
+const MODEL_URL = new URL("models/", document.baseURI).toString();
 
 /**
  * Charge TOUS les modèles nécessaires (détection, repères/landmarks, ET

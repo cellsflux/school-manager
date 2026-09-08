@@ -14,9 +14,15 @@
     <!--
       Content Security Policy pour Electron + React + Vite.
 
-      Les directives originales sont conservées.
-      Les ressources externes HTTP/HTTPS sont autorisées
-      notamment pour les images, médias, fonts et API.
+      Autorisations :
+      - React / Vite
+      - WebSocket
+      - HTTP / HTTPS
+      - localhost
+      - fichiers locaux file://
+      - images data/blob
+      - fonts data
+      - médias locaux et distants
     -->
     <meta
       http-equiv="Content-Security-Policy"
@@ -38,6 +44,7 @@
           'self'
           http:
           https:
+          file:
           data:
           blob:;
 
@@ -45,10 +52,12 @@
           'self'
           http:
           https:
+          file:
           data:;
 
         connect-src
           'self'
+          file:
           ws:
           wss:
           http://localhost:*
@@ -60,6 +69,7 @@
           'self'
           http:
           https:
+          file:
           data:
           blob:;
 

@@ -21,13 +21,28 @@ export const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 
-if (process.env.NODE_ENV === "development") {
-  app.setAsDefaultProtocolClient("scoolmanager", process.execPath, [
-    path.resolve(process.argv[1]),
-  ]);
-} else {
-  app.setAsDefaultProtocolClient("scoolmanager");
+const PROTOCOL = "scoolmanager";
+
+function registerProtocolHandler(): void {
+  if (!app.isPackaged) {
+    // Mode dev (electron . / npm run dev) : argv[1] doit être le chemin
+    // du projet, PAS une URL. On vérifie que c'est bien le cas avant
+    // d'enregistrer, sinon on ignore (évite de corrompre le registre si
+    // l'app est relancée via un deep link pendant qu'on est en dev).
+    const scriptArg = process.argv[1];
+    const looksLikeUrl = scriptArg?.startsWith(`${PROTOCOL}://`);
+
+    if (scriptArg && !looksLikeUrl) {
+      app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
+        path.resolve(scriptArg),
+      ]);
+    }
+  } else {
+    // Build packagé : process.execPath = ton .exe, pas besoin d'argv custom.
+    app.setAsDefaultProtocolClient(PROTOCOL);
+  }
 }
+registerProtocolHandler();
 
 const gotTheLock = app.requestSingleInstanceLock();
 
