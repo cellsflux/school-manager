@@ -16,7 +16,6 @@ import {
   useFaceDetection,
   FaceDetectionLoader,
 } from "@/context/FaceDetectionContext";
-import FaceEnrollment from "@/components/ai/faceenrolement";
 
 // ---------------------------------------------------------------------------
 // 1. Le type métier - aligné avec le modèle Realm
@@ -29,7 +28,12 @@ type Student = {
   lname: string;
   fm_name: string;
   picture?: string;
-  description?: number[];
+  // IMPORTANT : le schéma stocke `description` comme une STRING JSON
+  // (`description: { type: String }`), pas comme un array de nombres.
+  // Ce champ contient donc littéralement "[0.12,-0.03,...]" tel que reçu
+  // de l'API. Utilise `getStudentDescriptor(student)` ci-dessous pour
+  // obtenir l'array exploitable (reconnaissance faciale, affichage...).
+  description?: string;
   dateOfBirth: Date | string;
   placeOfBirth: string;
   nationality: string;
@@ -65,6 +69,22 @@ function formatDateForExport(dateInput: Date | string): string {
     month: "2-digit",
     year: "numeric",
   });
+}
+
+/**
+ * Reconvertit la String JSON stockée en base (`student.description`) en
+ * array de 128 nombres exploitable. Retourne `[]` si absent/invalide — ne
+ * jette jamais, pour ne pas casser le rendu de la table sur un étudiant mal
+ * enrôlé (ex: ancien bug où l'empreinte n'était pas enregistrée du tout).
+ */
+function getStudentDescriptor(student: Pick<Student, "description">): number[] {
+  if (!student.description) return [];
+  try {
+    const parsed = JSON.parse(student.description);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 // Composant pour afficher la photo
@@ -347,6 +367,11 @@ function StudentTableContent() {
       const normalizedStudents = list.map((s: any) => ({
         ...s,
         id: s.id ?? s._id?.toString?.() ?? String(s._id),
+        // `description` reste tel quel ici : la String JSON brute renvoyée
+        // par l'API. On ne la parse PAS à ce stade pour garder `students`
+        // léger à manipuler/trier/exporter — c'est `getStudentDescriptor()`
+        // ou `normalizeDescriptor()` (faceRecognition.ts) qui la décodent
+        // au moment où on a réellement besoin de l'array de 128 nombres.
         dateOfBirth:
           s.dateOfBirth instanceof Date
             ? s.dateOfBirth
@@ -420,11 +445,26 @@ function StudentTableContent() {
   // Mémoriser les données pour éviter des re-rendus inutiles
   const data = useMemo(() => students, [students]);
 
+  // Étudiants formatés pour les composants de reconnaissance faciale :
+  // `description` y est attendu comme l'array de 128 nombres (ou en tout
+  // cas quelque chose que `normalizeDescriptor` sait décoder) — on
+  // convertit donc explicitement ici plutôt que de faire confiance à un
+  // cast `as StudentFaceProfile[]` qui masquait l'incohérence de type.
+  const faceProfiles: StudentFaceProfile[] = useMemo(
+    () =>
+      data.map((s) => ({
+        ...s,
+        id: s.id,
+        description: getStudentDescriptor(s),
+      })),
+    [data],
+  );
+
   return (
     <>
       {faceReady && (
         <MultiFaceIdentifier
-          students={data as StudentFaceProfile[]}
+          students={faceProfiles}
           onCropFace={(dataUrl, face) => {
             console.log(
               "Visage rogné pour",

@@ -18,6 +18,7 @@ import {
 import FaceEnrollment from "@/components/ai/faceenrolement";
 import type { StudentFaceProfile } from "@/Ai/faceRecognition";
 import type { FaceEnrollmentResult } from "@/Ai/faceEnrolement";
+import { useConnecter } from "@/hooks/useConnecter";
 
 // Types pour les données du formulaire
 interface StudentFormData {
@@ -42,10 +43,40 @@ interface StudentFormData {
 
 // Props pour le formulaire
 interface AddStudentProps {
-  initialData?: Partial<StudentFormData>;
+  // `description`, quand il vient de l'API (mode édition), arrive comme la
+  // String JSON brute stockée en base (schéma: `description: { type: String }`).
+  // On accepte donc soit un array déjà parsé, soit cette string brute.
+  initialData?: Partial<Omit<StudentFormData, "description">> & {
+    description?: number[] | string | null;
+  };
   students?: StudentFaceProfile[];
   onSave?: (data: StudentFormData) => void;
   onCancel?: () => void;
+  onSuccess?: () => void;
+}
+
+/**
+ * Parse en toute sécurité l'empreinte reçue depuis l'API : elle est stockée
+ * en base comme une String JSON (schéma Realm : `description: { type: String }`),
+ * donc en mode édition `initialData.description` arrive sous cette forme et
+ * doit être reconverti en array de 128 nombres avant d'aller dans le state
+ * du formulaire (où le reste du composant l'attend en number[]).
+ */
+function parseStoredDescription(
+  raw: number[] | string | null | undefined,
+): number[] | null {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    console.warn(
+      "⚠️ Impossible de parser l'empreinte faciale existante (description) :",
+      raw,
+    );
+    return null;
+  }
 }
 
 // Composant d'alerte réutilisable
@@ -238,7 +269,7 @@ const IdentityStep: React.FC<StepProps> = ({
             students={students}
             value={data.picture ?? null}
             onChange={handleFaceEnrollment}
-            // onError={handleFaceError}
+            onError={handleFaceError}
           />
           <div className="flex-1">
             <p className="text-xs text-muted-foreground">
@@ -623,15 +654,18 @@ export const AddStudent: React.FC<AddStudentProps> = ({
   students = [],
   onSave,
   onCancel,
+  onSuccess,
 }) => {
+  const { Student } = useConnecter();
   const [currentStep, setCurrentStep] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<StudentFormData>({
     matricule: initialData.matricule || "",
     fname: initialData.fname || "",
     lname: initialData.lname || "",
     fm_name: initialData.fm_name || "",
     picture: initialData.picture || "",
-    description: initialData.description || null,
+    description: parseStoredDescription(initialData.description),
     dateOfBirth: initialData.dateOfBirth || null,
     placeOfBirth: initialData.placeOfBirth || "",
     nationality: initialData.nationality || "",
@@ -647,6 +681,7 @@ export const AddStudent: React.FC<AddStudentProps> = ({
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string>("");
 
   const steps = [
     { title: "Identité", icon: User, component: IdentityStep },
@@ -659,6 +694,30 @@ export const AddStudent: React.FC<AddStudentProps> = ({
 
   const updateData = (key: keyof StudentFormData, value: any) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const resetForm = () => {
+    setFormData({
+      matricule: "",
+      fname: "",
+      lname: "",
+      fm_name: "",
+      picture: "",
+      description: null,
+      dateOfBirth: null,
+      placeOfBirth: "",
+      nationality: "",
+      gender: "",
+      phone: "",
+      address: "",
+      dad_name: "",
+      mom_name: "",
+      responsableName: "",
+      responsableRelation: "",
+      responsablePhone: "",
+    });
+    setCurrentStep(0);
+    setSubmitError(null);
   };
 
   const handleNext = () => {
@@ -700,11 +759,24 @@ export const AddStudent: React.FC<AddStudentProps> = ({
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // Vérifier que la photo et l'empreinte sont présentes
     if (!formData.picture || !formData.description) {
       setSubmitError(
         "Veuillez capturer une photo et enregistrer l'empreinte faciale.",
+      );
+      return;
+    }
+
+    // CORRECTIF : garde-fou supplémentaire — s'assure que l'empreinte a
+    // bien la forme attendue (128 nombres) avant même d'appeler l'API,
+    // pour ne plus jamais enregistrer un étudiant avec une empreinte vide.
+    if (
+      !Array.isArray(formData.description) ||
+      formData.description.length !== 128
+    ) {
+      setSubmitError(
+        "L'empreinte faciale semble invalide (relance la capture de la photo avant de soumettre).",
       );
       return;
     }
@@ -729,18 +801,94 @@ export const AddStudent: React.FC<AddStudentProps> = ({
       return;
     }
 
+    setIsSubmitting(true);
     setSubmitError(null);
-    setSubmitSuccess(true);
 
-    console.log("Form data submitted:", formData);
-    if (onSave) {
-      onSave(formData);
+    try {
+      // Récupérer l'ID de l'établissement depuis le localStorage
+      const etablissementId = localStorage.getItem("__id_");
+
+      if (!etablissementId) {
+        setSubmitError(
+          "ID de l'établissement non trouvé. Veuillez vous reconnecter.",
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Préparer les données pour l'API
+      //
+      // CORRECTIF (bug "toujours Inconnu") : `description` (l'empreinte
+      // faciale, 128 nombres) était calculée et stockée dans le state du
+      // formulaire via handleFaceEnrollment(), mais n'était JAMAIS incluse
+      // dans ce payload envoyé à Student.create(). Le schéma appliquait
+      // donc sa valeur par défaut, et aucune comparaison faciale ne pouvait
+      // plus jamais matcher cet étudiant, y compris sur sa propre photo
+      // d'enrôlement.
+      //
+      // IMPORTANT : le champ `description` du schéma Realm/Mongoose est de
+      // type String (pas un array de nombres) :
+      //   description: { type: String }
+      // Il FAUT donc le sérialiser en JSON avant de l'envoyer, sinon l'ORM
+      // le convertit en la string "0.12,-0.03,..." (via toString() implicite
+      // sur l'array) ou rejette la valeur selon l'implémentation — dans les
+      // deux cas, illisible tel quel par JSON.parse() à la relecture.
+      const studentData = {
+        fname: formData.fname,
+        lname: formData.lname,
+        fm_name: formData.fm_name || "",
+        picture: formData.picture,
+        description: JSON.stringify(formData.description), // <-- stringify obligatoire (schéma = String)
+        dateOfBirth: formData.dateOfBirth,
+        placeOfBirth: formData.placeOfBirth,
+        nationality: formData.nationality || "",
+        gender: formData.gender,
+        phone: formData.phone || "",
+        address: formData.address || "",
+        dad_name: formData.dad_name || "",
+        mom_name: formData.mom_name || "",
+        responsableName: formData.responsableName || "",
+        responsablePhone: formData.responsablePhone || "",
+        responsableRelation: formData.responsableRelation || "",
+      };
+
+      // Appeler l'API pour créer l'étudiant
+      const result = await Student.create({
+        student: studentData,
+        etablissementId: etablissementId,
+      });
+
+      if (result.success) {
+        setSubmitSuccess(true);
+        setSuccessMessage(
+          result.message || "Étudiant enregistré avec succès !",
+        );
+
+        // Appeler le callback onSave si fourni
+        if (onSave) {
+          onSave(formData);
+        }
+
+        // Appeler le callback onSuccess si fourni
+        if (onSuccess) {
+          onSuccess();
+        }
+
+        // Réinitialiser le formulaire après 2 secondes
+        setTimeout(() => {
+          resetForm();
+          setSubmitSuccess(false);
+          setSuccessMessage("");
+        }, 2000);
+      } else {
+        setSubmitError(result.message || "Erreur lors de l'enregistrement");
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'enregistrement:", error);
+      setSubmitError("Une erreur est survenue lors de l'enregistrement.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // Cacher le message de succès après 5 secondes
-    setTimeout(() => {
-      setSubmitSuccess(false);
-    }, 5000);
   };
 
   const CurrentStepComponent = steps[currentStep].component;
@@ -808,9 +956,14 @@ export const AddStudent: React.FC<AddStudentProps> = ({
             <div className="mb-4">
               <Alert
                 type="success"
-                title="✅ Formulaire soumis avec succès"
-                message="Les données ont été enregistrées."
-                onClose={() => setSubmitSuccess(false)}
+                title="✅ Enregistrement réussi"
+                message={
+                  successMessage || "L'étudiant a été enregistré avec succès !"
+                }
+                onClose={() => {
+                  setSubmitSuccess(false);
+                  setSuccessMessage("");
+                }}
               />
             </div>
           )}
@@ -833,9 +986,9 @@ export const AddStudent: React.FC<AddStudentProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrevious}
-              disabled={currentStep === 0}
+              disabled={currentStep === 0 || isSubmitting}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border transition-all duration-200 ${
-                currentStep === 0
+                currentStep === 0 || isSubmitting
                   ? "border-border text-muted-foreground cursor-not-allowed opacity-50"
                   : "border-border text-foreground hover:bg-primary/5 hover:border-primary/30"
               }`}
@@ -846,6 +999,7 @@ export const AddStudent: React.FC<AddStudentProps> = ({
             {onCancel && (
               <button
                 onClick={onCancel}
+                disabled={isSubmitting}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border text-muted-foreground hover:bg-muted/50 transition-all duration-200"
               >
                 Annuler
@@ -856,15 +1010,49 @@ export const AddStudent: React.FC<AddStudentProps> = ({
           {isSummaryStep ? (
             <button
               onClick={handleSubmit}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-200 shadow-lg shadow-primary/20"
+              disabled={isSubmitting}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-200 shadow-lg shadow-primary/20 ${
+                isSubmitting ? "opacity-70 cursor-not-allowed" : ""
+              }`}
             >
-              <Check className="w-4 h-4" />
-              {initialData.matricule ? "Mettre à jour" : "Envoyer"}
+              {isSubmitting ? (
+                <>
+                  <svg
+                    className="animate-spin h-4 w-4"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  Enregistrement...
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  {initialData.matricule ? "Mettre à jour" : "Envoyer"}
+                </>
+              )}
             </button>
           ) : (
             <button
               onClick={handleNext}
-              className="flex items-center gap-2 px-6 py-2.5 dark:text-white rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-200 shadow-lg shadow-primary/20"
+              disabled={isSubmitting}
+              className={`flex items-center gap-2 px-6 py-2.5 dark:text-white rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-200 shadow-lg shadow-primary/20 ${
+                isSubmitting ? "opacity-70 cursor-not-allowed" : ""
+              }`}
             >
               Suivant
               <ChevronRight className="w-4 h-4" />

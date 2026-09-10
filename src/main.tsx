@@ -26,6 +26,11 @@ import "@mantine/schedule/styles.css";
 import "@mantine/dates/styles.css";
 import { AuthProvider } from "./context/AuthContext";
 import { FaceDetectionProvider } from "./context/FaceDetectionContext";
+import {
+  AbonnementProvider,
+  AbonnementRefreshButton,
+  WelcomeMessage,
+} from "./providers/app-subscribe.provider";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -34,13 +39,17 @@ createRoot(document.getElementById("root")!).render(
         <NavigationProgress />
         <Notifications />
         <AuthProvider>
-          <MantineProvider>
-            <ModalsProvider>
-              <FaceDetectionProvider autoLoad={true}>
-                <App />
-              </FaceDetectionProvider>
-            </ModalsProvider>
-          </MantineProvider>
+          <AbonnementProvider>
+            <MantineProvider>
+              <ModalsProvider>
+                <FaceDetectionProvider autoLoad={true}>
+                  <App />
+                </FaceDetectionProvider>
+              </ModalsProvider>
+            </MantineProvider>
+
+            <AbonnementRefreshButton />
+          </AbonnementProvider>
         </AuthProvider>
       </AppThemeProvider>
     </HashRouter>

@@ -17,14 +17,14 @@ export const generateStudentMatricule = async (
 
   try {
     // 1. Récupérer l'établissement
-    const etablissement = await EtablissmentModel.findById(etablissementId);
-    if (!etablissement) {
+    const etablissement = await EtablissmentModel.find({ id: etablissementId });
+    if (!etablissement || etablissement.length < 1) {
       throw new Error("Établissement non trouvé");
     }
 
     // 2. Récupérer la configuration du matricule
-    const prefix = etablissement.maticule_prefix || "STU";
-    const length = etablissement.matricule_lengh || 6;
+    const prefix = etablissement[0].maticule_prefix || "STU";
+    const length = etablissement[0].matricule_lengh || 6;
 
     // Validation des paramètres
     if (length < 1 || length > 20) {

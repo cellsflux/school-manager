@@ -13,10 +13,11 @@ export default defineConfig({
       "@shared": path.resolve(import.meta.dirname, "./shared"),
       "@resources": path.resolve(import.meta.dirname, "./resources"),
     },
+    dedupe: ["react", "react-dom"],
   },
 
   optimizeDeps: {
-    include: ["@vladmandic/face-api"],
+    include: ["@vladmandic/face-api", "react", "react-dom"],
   },
 
   build: {

@@ -97,7 +97,24 @@ export const EtsModule = {
     const exiteEtab = await EtablissmentModel.find({ id: cleanData.id });
 
     if (exiteEtab.length > 0) {
-      console.log("exite etab true");
+      const { id, ...rest } = cleanData || {};
+
+      if (!id) {
+        throw new Error("ID requis pour la mise à jour");
+      }
+
+      const updateData = normalizeEtablissement(rest);
+
+      if (Object.keys(updateData).length === 0) {
+        throw new Error("Aucun champ valide à mettre à jour");
+      }
+
+      const updated = await EtablissmentModel.findOneAndUpdate(
+        { id },
+        updateData,
+        { new: true },
+      );
+
       return { etablissement: exiteEtab[0] };
     }
 
@@ -169,7 +186,6 @@ export const EtsModule = {
   getEts: async (id?: string) => {
     try {
       const etablissements = await EtablissmentModel.find();
-      console.log(etablissements);
 
       if (id) {
         const etablissement = await EtablissmentModel.findOne({ id });

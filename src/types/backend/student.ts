@@ -23,4 +23,5 @@ export interface Istudent {
   responsableName: string;
   responsableRelation: string;
   responsablePhone: string;
+  description: string;
 }

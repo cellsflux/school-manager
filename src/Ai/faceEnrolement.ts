@@ -3,6 +3,7 @@ import {
   detectFaces,
   computeFaceDescriptor,
   captureFaceThumbnail,
+  normalizeDescriptor,
   type FaceBox,
   type FaceDetectionResult,
   type StudentFaceProfile,
@@ -214,10 +215,7 @@ function computeSharpnessAndBrightness(
 }
 
 /**
- * Estime grossièrement la pose du visage à partir des 68 repères :
- * `yaw` (rotation gauche/droite, 0 = de face) via la position du nez par
- * rapport au milieu des deux yeux, et `rollDeg` (inclinaison de la tête) via
- * l'angle de la ligne des yeux.
+ * Estime grossièrement la pose du visage à partir des 68 repères.
  */
 function estimatePose(landmarks: { x: number; y: number }[]): {
   yaw: number;
@@ -328,8 +326,6 @@ export function assessFaceQuality(
   const issues: QualityIssue[] = [];
   if (faces.length > 1) issues.push("plusieurs_visages");
 
-  // On travaille sur le plus grand visage détecté (le plus proche de la
-  // caméra), les autres sont signalés via "plusieurs_visages".
   const face = [...faces].sort(
     (a, b) => b.box.width * b.box.height - a.box.width * a.box.height,
   )[0];
@@ -430,20 +426,51 @@ export const DEFAULT_DUPLICATE_THRESHOLD = 0.5;
  * (nom, matricule, téléphone, etc.) pour affichage — ou `null` si personne
  * ne correspond, ce qui signifie que l'enrôlement peut se poursuivre sans
  * risque de doublon.
+ *
+ * CORRECTIF : utilise `normalizeDescriptor` (au lieu d'un simple
+ * `Array.isArray` + cast direct) pour accepter les empreintes stockées en
+ * string JSON ou en objet array-like, et pour ignorer proprement celles qui
+ * sont vraiment invalides plutôt que de fausser silencieusement le calcul.
  */
 export function findDuplicateStudent(
   descriptor: Float32Array | number[],
   students: StudentFaceProfile[],
   threshold = DEFAULT_DUPLICATE_THRESHOLD,
 ): DuplicateMatch | null {
-  const candidates = students.filter(
-    (s) => Array.isArray(s.description) && s.description.length > 0,
-  );
+  const descArr =
+    descriptor instanceof Float32Array
+      ? descriptor
+      : new Float32Array(descriptor);
+
+  const candidates = students
+    .map((s) => ({
+      student: s,
+      vec: normalizeDescriptor(s.description, {
+        studentId: s.id,
+        studentName: `${s.fname} ${s.lname}`,
+      }),
+    }))
+    .filter(
+      (c): c is { student: StudentFaceProfile; vec: Float32Array } =>
+        c.vec !== null,
+    );
+
+  if (students.length > 0 && candidates.length === 0) {
+    console.warn(
+      `⚠️ findDuplicateStudent: ${students.length} étudiant(s) reçu(s) mais AUCUN n'a une empreinte exploitable — vérifie le champ "description" renvoyé par l'API.`,
+    );
+  }
 
   let best: { student: StudentFaceProfile; distance: number } | null = null;
-  for (const student of candidates) {
-    const distance = euclideanDistance(descriptor, student.description);
+  for (const { student, vec } of candidates) {
+    const distance = euclideanDistance(descArr, vec);
     if (!best || distance < best.distance) best = { student, distance };
+  }
+
+  if (best) {
+    console.log(
+      `findDuplicateStudent: meilleure distance ${best.distance.toFixed(3)} (seuil ${threshold}) pour ${best.student.fname} ${best.student.lname}`,
+    );
   }
 
   if (best && best.distance <= threshold) {
@@ -464,12 +491,7 @@ export type Triangle = [number, number, number];
 
 /**
  * Triangulation de Delaunay (algorithme de Bowyer-Watson) sur un nuage de
- * points 2D. Sert uniquement à dessiner le maillage triangulaire animé
- * pendant le scan caméra — la topologie (quels points relier) est calculée
- * UNE SEULE fois par l'appelant à partir des landmarks, puis réutilisée à
- * chaque frame en ne mettant à jour que les positions, pour éviter que le
- * maillage clignote quand les 68 repères bougent légèrement d'une frame à
- * l'autre.
+ * points 2D.
  */
 export function computeDelaunayTriangles(
   points: { x: number; y: number }[],
@@ -484,8 +506,6 @@ export function computeDelaunayTriangles(
   const midX = (minX + maxX) / 2;
   const midY = (minY + maxY) / 2;
 
-  // Triangle englobant fictif, assez grand pour contenir tous les points ;
-  // il est retiré du résultat final.
   const coords = [
     ...points,
     { x: midX - deltaMax, y: midY - deltaMax },
@@ -577,11 +597,6 @@ export type EnrollFromImageOutcome = {
  * Pipeline complet pour une image statique (upload de fichier) : détection,
  * jugement de qualité, calcul d'empreinte, capture de la vignette en base64,
  * et recherche de doublon dans la base fournie.
- *
- * Contrairement à la caméra, on ne peut pas exiger la stabilité sur
- * plusieurs frames : une photo floue ou mal cadrée est simplement signalée
- * via `quality`, à l'appelant de décider s'il bloque ou laisse l'utilisateur
- * continuer en connaissance de cause.
  */
 export async function enrollFromImage(
   image: HTMLImageElement,

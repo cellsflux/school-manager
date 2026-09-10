@@ -60,12 +60,14 @@ if (!gotTheLock) {
         preload: path.join(__dirname, "../preload/preload.mjs"),
         contextIsolation: true,
         nodeIntegration: true,
+
         //webSecurity: false, // 🔥 Désactiver la sécurité pour les images
       },
     });
 
     if (process.env.VITE_DEV_SERVER_URL) {
       mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+      mainWindow.webContents.openDevTools();
     } else {
       mainWindow.loadFile(path.join(__dirname, "../../dist/index.html"));
     }

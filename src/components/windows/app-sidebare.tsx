@@ -518,7 +518,7 @@ export function Sidebar({
             chevronPosition="right"
             styles={{
               chevron: {
-                "&[data-rotate]": {
+                "&[dataRotate]": {
                   transform: "rotate(180deg)",
                 },
               },
@@ -569,7 +569,10 @@ export function Sidebar({
             leftSection={<LogOutIcon size={20} />}
             justify={opened ? "flex-start" : "center"}
             fullWidth
-            onClick={() => logout()}
+            onClick={async () => {
+              await localStorage.removeItem("__id_");
+              await logout();
+            }}
             style={{
               padding: opened ? "8px 12px" : "6px 4px",
               border: "none",

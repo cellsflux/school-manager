@@ -81,6 +81,75 @@ function ensureModelsLoaded() {
 }
 
 // ---------------------------------------------------------------------------
+// Normalisation d'une empreinte stockée (CORRECTIF)
+// ---------------------------------------------------------------------------
+//
+// Bug fréquent : `student.description` peut arriver depuis l'API sous
+// plusieurs formes selon comment il a été stocké / sérialisé :
+//   - un vrai tableau de 128 nombres -> [0.12, -0.03, ...]           OK
+//   - une STRING JSON              -> "[0.12,-0.03,...]"            à parser
+//   - un objet Mongo/BSON "array-like" -> { "0": 0.12, "1": -0.03 }  à convertir
+//   - undefined / null / []                                          invalide
+//
+// Avant ce correctif, un `description` en string passait le test
+// `Array.isArray(...)` à `false` (étudiant silencieusement ignoré), ou pire,
+// s'il passait quand même, `new Float32Array(str)` produisait des NaN et la
+// distance calculée n'était jamais <= threshold -> "Inconnu" tout le temps,
+// même sur la photo d'enrôlement elle-même.
+//
+// Cette fonction tente TOUTES les conversions plausibles et ne retourne
+// `null` que si aucune n'a marché, avec un avertissement explicite en
+// console pour diagnostiquer rapidement le format réel reçu depuis l'API.
+export function normalizeDescriptor(
+  raw: unknown,
+  context?: { studentId?: string; studentName?: string },
+): Float32Array | null {
+  if (raw == null) return null;
+
+  let arr: number[] | null = null;
+
+  if (Array.isArray(raw)) {
+    arr = raw as number[];
+  } else if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) arr = parsed;
+    } catch {
+      console.warn(
+        "⚠️ description reçue en string mais non parsable en JSON pour",
+        context?.studentName ?? context?.studentId ?? "un étudiant",
+        "->",
+        raw.slice(0, 60),
+      );
+      return null;
+    }
+  } else if (typeof raw === "object") {
+    // Objet "array-like" du style { "0": 0.1, "1": -0.2, ... } (arrive
+    // parfois après un aller-retour BSON/JSON mal typé côté API).
+    const values = Object.values(raw as Record<string, unknown>);
+    if (values.length > 0 && values.every((v) => typeof v === "number")) {
+      arr = values as number[];
+    }
+  }
+
+  if (
+    !arr ||
+    arr.length !== 128 ||
+    arr.some((v) => typeof v !== "number" || Number.isNaN(v))
+  ) {
+    console.warn(
+      "⚠️ Empreinte invalide ou incomplète (attendu 128 nombres) pour",
+      context?.studentName ?? context?.studentId ?? "un étudiant",
+      "-> longueur reçue:",
+      arr?.length ?? "n/a",
+    );
+    return null;
+  }
+
+  return new Float32Array(arr);
+}
+
+// ---------------------------------------------------------------------------
 // Détection brute (image, vidéo ou canvas)
 // ---------------------------------------------------------------------------
 
@@ -183,21 +252,6 @@ export function stopCamera(stream: MediaStream | null): void {
 // ---------------------------------------------------------------------------
 // Autorisations caméra — spécifique Electron
 // ---------------------------------------------------------------------------
-//
-// Dans un navigateur classique, Chrome affiche lui-même une popup de
-// permission et `navigator.permissions.query({name:"camera"})` fonctionne.
-// Dans Electron, ce n'est PAS garanti :
-//  - le process PRINCIPAL doit autoriser la permission "media" via
-//    `session.defaultSession.setPermissionRequestHandler`, sinon
-//    `getUserMedia` échoue silencieusement avec NotAllowedError.
-//  - sur macOS, l'OS bloque en plus l'accès au niveau système (TCC) tant que
-//    l'utilisateur n'a pas autorisé l'app dans
-//    Réglages Système > Confidentialité > Caméra. Il faut appeler
-//    `systemPreferences.askForMediaAccess("camera")` côté main process
-//    AVANT le premier appel à getUserMedia.
-//
-// Voir le snippet main.js fourni à côté de ce fichier pour la partie
-// process principal — ici on gère uniquement le côté renderer (ce fichier).
 
 export type CameraPermissionState =
   | "idle"
@@ -268,9 +322,6 @@ export async function requestCameraAccess(
 
 /**
  * Message utilisateur adapté à chaque état, avec l'action recommandée.
- * Sur Electron/macOS, "denied" signifie le plus souvent qu'il faut activer
- * l'accès dans Réglages Système > Confidentialité > Caméra puis relancer
- * l'app (Electron ne peut pas rouvrir cette permission tout seul).
  */
 export function describeCameraPermission(state: CameraPermissionState): {
   title: string;
@@ -452,9 +503,7 @@ export function drawFaceDetections(
 
 /**
  * Capture une vignette carrée centrée sur un visage détecté — depuis un
- * frame vidéo OU une image statique (photo de groupe importée). Pratique
- * pour isoler UNE personne précise sur une photo contenant plusieurs
- * visages ("rogner cette personne").
+ * frame vidéo OU une image statique (photo de groupe importée).
  *
  * `padding` ajoute une marge autour du visage (0.5 = +50% de chaque côté).
  */
@@ -477,8 +526,6 @@ export function captureFaceThumbnail(
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
 
-  // On borne le crop aux dimensions réelles de la source pour éviter de
-  // capturer en dehors du cadre sur les visages proches d'un bord.
   const sx = Math.max(0, Math.min(cx - size / 2, naturalWidth - size));
   const sy = Math.max(0, Math.min(cy - size / 2, naturalHeight - size));
   const clampedSize = Math.min(size, naturalWidth, naturalHeight);
@@ -506,13 +553,7 @@ export function captureFaceThumbnail(
 
 /**
  * Recadre puis relance la détection UNIQUEMENT sur la zone d'un visage
- * repéré dans une photo de groupe. Utile pour "rogner pour détecter
- * efficacement" : sur une photo large avec plusieurs personnes, un visage
- * lointain/petit est parfois mal reconnu — en zoomant dessus avant de
- * relancer la détection/l'empreinte, la précision remonte nettement.
- *
- * Retourne le canvas recadré (à afficher ou réutiliser) et les visages
- * re-détectés dedans (généralement un seul, plus net).
+ * repéré dans une photo de groupe.
  */
 export async function refineFaceInCrop(
   source: HTMLVideoElement | HTMLImageElement,
@@ -535,8 +576,6 @@ export async function refineFaceInCrop(
   const sy = Math.max(0, Math.min(cy - size / 2, naturalHeight - size));
   const clampedSize = Math.min(size, naturalWidth, naturalHeight);
 
-  // On agrandit le recadrage à une résolution correcte (512px) pour donner
-  // plus de détail au détecteur qu'un simple crop 1:1 pixel réel.
   const canvas = document.createElement("canvas");
   const outputSize = 512;
   canvas.width = outputSize;
@@ -562,15 +601,6 @@ export async function refineFaceInCrop(
 // ---------------------------------------------------------------------------
 // Empreinte faciale (reconnaissance) — enregistrer et rechercher un visage
 // ---------------------------------------------------------------------------
-//
-// La détection (ci-dessus) dit "il y a un visage ici". La reconnaissance dit
-// "ce visage est celui de telle personne". Pour ça, `faceRecognitionNet`
-// transforme un visage en un vecteur de 128 nombres (le "descripteur" /
-// empreinte). Deux photos du même visage donnent des vecteurs proches ;
-// deux personnes différentes donnent des vecteurs éloignés.
-//
-// Ce modèle est plus lourd que ceux de la détection : on le charge à part,
-// seulement quand on en a réellement besoin (enrôlement ou recherche).
 
 /**
  * Calcule l'empreinte (descripteur, 128 valeurs) du visage le plus net
@@ -618,10 +648,10 @@ export function matchDescriptor(
   let best: FaceMatch | null = null;
 
   for (const record of records) {
-    const candidate =
-      record.descriptor instanceof Float32Array
-        ? record.descriptor
-        : new Float32Array(record.descriptor);
+    const candidate = normalizeDescriptor(record.descriptor, {
+      studentId: record.id,
+    });
+    if (!candidate) continue;
 
     const distance = faceapi.euclideanDistance(descriptor, candidate);
     if (!best || distance < best.distance) {
@@ -648,27 +678,19 @@ export function arrayToDescriptor(values: number[]): Float32Array {
 // ---------------------------------------------------------------------------
 // Recherche multi-visages — branchement direct sur ton modèle `StudentModel`
 // ---------------------------------------------------------------------------
-//
-// Ces fonctions ne touchent à AUCUNE base de données : elles prennent en
-// entrée un tableau d'étudiants déjà chargés (le résultat d'une requête
-// `StudentModel.find()` par exemple) et te disent, pour chaque visage
-// détecté dans une image, à quel étudiant il correspond — si un
-// correspond. Le contrôle d'empreinte est donc entièrement prêt ; il ne te
-// reste qu'à lui passer tes données et à enregistrer `description` au
-// moment de l'enrôlement.
 
 /**
- * Reflète les champs de `studentSchema` réellement utilisés ici. Étend cette
- * base avec le reste de tes champs (matricule, phone, dateOfBirth…) — ce
- * type n'exige que le strict nécessaire à l'identification.
+ * Reflète les champs de `studentSchema` réellement utilisés ici.
  */
 export type StudentFaceProfile = {
   /** Identifiant Mongo/Realm — passe `student._id.toString()` si besoin. */
   id: string;
   fname: string;
   lname: string;
-  /** Empreinte stockée en base (champ `description` du schéma). */
-  description: number[];
+  /** Empreinte stockée en base (champ `description` du schéma). Peut être
+   *  un tableau, une string JSON, ou un objet array-like selon la source —
+   *  voir `normalizeDescriptor`. */
+  description: unknown;
   picture?: string;
   matricule?: string;
   [key: string]: unknown;
@@ -698,6 +720,11 @@ const GROUP_DETECTOR_OPTIONS = new faceapi.TinyFaceDetectorOptions({
  *
  * `threshold` : voir `matchDescriptor` (0.5 par défaut, baisse pour être
  * plus strict).
+ *
+ * CORRECTIF : utilise désormais `normalizeDescriptor` pour accepter les
+ * empreintes stockées en string JSON ou en objet array-like, et log un
+ * avertissement clair si aucun étudiant "candidat" n'est disponible (cause
+ * n°1 du bug "toujours Inconnu").
  */
 export async function identifyFacesInImage(
   input: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement,
@@ -711,10 +738,30 @@ export async function identifyFacesInImage(
     .withFaceLandmarks(true)
     .withFaceDescriptors();
 
-  // On ne garde que les étudiants qui ont bien une empreinte enregistrée.
-  const candidates = students.filter(
-    (s) => Array.isArray(s.description) && s.description.length > 0,
-  );
+  // On ne garde que les étudiants dont l'empreinte a pu être normalisée.
+  const candidates = students
+    .map((s) => ({
+      student: s,
+      descriptor: normalizeDescriptor(s.description, {
+        studentId: s.id,
+        studentName: `${s.fname} ${s.lname}`,
+      }),
+    }))
+    .filter(
+      (c): c is { student: StudentFaceProfile; descriptor: Float32Array } =>
+        c.descriptor !== null,
+    );
+
+  if (students.length > 0 && candidates.length === 0) {
+    console.warn(
+      `⚠️ identifyFacesInImage: ${students.length} étudiant(s) reçu(s) mais AUCUN n'a une empreinte exploitable.`,
+      "Vérifie que ton API renvoie bien le champ `description` (128 nombres) et pas une version tronquée/omise.",
+    );
+  } else {
+    console.log(
+      `identifyFacesInImage: ${candidates.length}/${students.length} étudiant(s) comparable(s), ${detections.length} visage(s) détecté(s) dans l'image.`,
+    );
+  }
 
   return detections.map((d) => {
     const box: FaceBox = {
@@ -729,14 +776,16 @@ export async function identifyFacesInImage(
     let match: FaceIdentification["match"] = null;
     if (descriptor) {
       let best: { student: StudentFaceProfile; distance: number } | null = null;
-      for (const student of candidates) {
-        const distance = faceapi.euclideanDistance(
-          d.descriptor,
-          new Float32Array(student.description),
-        );
+      for (const { student, descriptor: candidateVec } of candidates) {
+        const distance = faceapi.euclideanDistance(d.descriptor, candidateVec);
         if (!best || distance < best.distance) {
           best = { student, distance };
         }
+      }
+      if (best) {
+        console.log(
+          `  -> meilleure distance: ${best.distance.toFixed(3)} (seuil: ${threshold}) pour ${best.student.fname} ${best.student.lname}`,
+        );
       }
       if (best && best.distance <= threshold) {
         match = { ...best.student, distance: best.distance };

@@ -18,6 +18,11 @@ export const Student = {
         lname: student.lname,
         fm_name: student.fm_name,
         picture: student.picture,
+        // CORRECTIF : ce champ était absent de la liste, donc jamais
+        // transmis au document Mongo malgré son envoi correct depuis le
+        // frontend (JSON.stringify de l'empreinte) — Mongoose appliquait
+        // silencieusement `null`/la valeur par défaut du schéma à la place.
+        description: student.description,
         dateOfBirth: student.dateOfBirth,
         placeOfBirth: student.placeOfBirth,
         nationality: student.nationality,
@@ -29,6 +34,7 @@ export const Student = {
         responsableName: student.responsableName,
         responsablePhone: student.responsablePhone,
         responsableRelation: student.responsableRelation,
+        etabid: etablissementId,
       });
 
       const res = await new_student.save();

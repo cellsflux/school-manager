@@ -1,3 +1,5 @@
+// App.tsx
+import React from "react";
 import AnimatedRoutes from "./components/windows/Animations.Routers";
 
 export default function App() {
