@@ -28,7 +28,6 @@ import { AuthProvider } from "./context/AuthContext";
 import { FaceDetectionProvider } from "./context/FaceDetectionContext";
 import {
   AbonnementProvider,
-  AbonnementRefreshButton,
   WelcomeMessage,
 } from "./providers/app-subscribe.provider";
 
@@ -47,8 +46,6 @@ createRoot(document.getElementById("root")!).render(
                 </FaceDetectionProvider>
               </ModalsProvider>
             </MantineProvider>
-
-            <AbonnementRefreshButton />
           </AbonnementProvider>
         </AuthProvider>
       </AppThemeProvider>

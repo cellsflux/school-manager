@@ -57,6 +57,7 @@ const etablissementchema = ormSchema(
     owener_name: String,
     owener_phone: String,
     token: String,
+
     maticule_prefix: { type: String },
     matricule_lengh: { type: Number },
     money: [

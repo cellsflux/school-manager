@@ -10,6 +10,7 @@ import {
   onFileOpen,
   onAuthResult,
 } from "./utils/deepLinking";
+import { saveSlug, loadSlug } from "./utils/sessionStore";
 import { initializeUpdater } from "./utils/updater";
 import {
   ensureMacCameraAccess,
@@ -20,6 +21,10 @@ export const __filename = fileURLToPath(import.meta.url);
 export const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
+
+// Un seul établissement connecté par installation. Sert de garde pour ne
+// pas rouvrir la base si elle l'est déjà pour ce même slug.
+let connectedEtablissementSlug: string | null = null;
 
 const PROTOCOL = "scoolmanager";
 
@@ -75,8 +80,20 @@ if (!gotTheLock) {
     return mainWindow;
   }
 
+  /**
+   * Ouvre la base locale correspondant au slug (si ce n'est pas déjà fait
+   * pour ce même slug) et prévient le renderer que l'app est prête à
+   * travailler hors-ligne sur cet établissement.
+   */
+  async function connectLocalDatabase(slug: string): Promise<void> {
+    if (connectedEtablissementSlug === slug) return;
+
+    await AppDatabases({ slug });
+    connectedEtablissementSlug = slug;
+    console.log(`💾 Base locale connectée pour "${slug}".`);
+  }
+
   app.whenReady().then(async () => {
-    AppDatabases();
     Menu.setApplicationMenu(null);
     registerModules();
     createWindow();
@@ -92,7 +109,6 @@ if (!gotTheLock) {
         mainWindow?.webContents.send("deep-link-data", data);
       });
 
-      // ✅ nouveau : callback fichier ouvert
       onFileOpen((data) => {
         console.log("📨 Fichier reçu dans le main:", data);
         mainWindow?.webContents.send("file-opened", data);
@@ -102,7 +118,7 @@ if (!gotTheLock) {
       // contre accessToken/refreshToken/user/etablissement). C'est ICI que
       // tu récupères les données utilisateur ET l'établissement sélectionné
       // sur le web — pas dans onDeepLink, qui ne voit que le `code` brut.
-      onAuthResult((result) => {
+      onAuthResult(async (result) => {
         if (!result.success || !result.data) {
           console.log(result);
           console.error("❌ Connexion échouée:", result.error);
@@ -111,29 +127,79 @@ if (!gotTheLock) {
         }
 
         const { accessToken, refreshToken, user, etablissement } = result.data;
+
+        if (!etablissement?.slug) {
+          console.error(
+            "❌ Établissement reçu sans slug — impossible de connecter la base locale.",
+          );
+          mainWindow?.webContents.send(
+            "auth:error",
+            "Établissement invalide (slug manquant).",
+          );
+          return;
+        }
+
         console.log("✅ Utilisateur connecté:", user);
         console.log("🏫 Établissement connecté:", etablissement);
 
-        // Le refresh token est sensible: on le chiffre avant stockage
-        // (safeStorage utilise le trousseau macOS / DPAPI Windows / libsecret
-        // Linux). Remplace ce bloc par ton propre mécanisme de persistance
-        // (ex: AppDatabases()) si tu préfères le garder centralisé là-bas.
-        if (safeStorage.isEncryptionAvailable()) {
-          const encrypted = safeStorage.encryptString(refreshToken);
-          // TODO: persister `encrypted` (buffer) via AppDatabases() ou un
-          // fichier dédié dans app.getPath("userData"), avec l'id de
-          // l'établissement connecté pour pouvoir gérer plusieurs comptes.
-          console.log("🔐 Refresh token chiffré, prêt à être persisté.");
+        try {
+          await connectLocalDatabase(etablissement.slug);
+        } catch (dbError: any) {
+          console.error("❌ Échec de connexion à la base locale:", dbError);
+          mainWindow?.webContents.send(
+            "auth:error",
+            "Impossible de préparer la base de données locale.",
+          );
+          return;
         }
 
-        // L'access token est éphémère (15 min): on le transmet directement
-        // au renderer avec l'établissement, pas besoin de les persister ici.
+        // Chaque deep link réécrit le slug: un seul établissement connecté
+        // à la fois, le nouveau remplace toujours l'ancien.
+        saveSlug(etablissement.slug);
+
+        // Le refresh token est sensible: on le chiffre avant stockage si tu
+        // en as besoin plus tard pour des appels réseau authentifiés
+        // (sync, etc.) — la restauration au démarrage, elle, ne dépend
+        // QUE du slug (voir plus bas), pas de ce token.
+        if (safeStorage.isEncryptionAvailable()) {
+          const encrypted = safeStorage.encryptString(refreshToken);
+          // TODO: persister `encrypted` si besoin d'appels API authentifiés
+          // plus tard (ex: sync cloud). Pas nécessaire pour juste rouvrir
+          // la base locale au démarrage.
+        }
+
         mainWindow?.webContents.send("auth:success", {
           accessToken,
           user,
           etablissement,
         });
       });
+
+      // Démarrage: pas de réseau ici, juste retrouver le slug déjà connu
+      // et rouvrir directement la base locale correspondante — l'app ne
+      // reste jamais à attendre un deep link si une connexion a déjà eu
+      // lieu par le passé.
+      const persistedSlug = loadSlug();
+      if (persistedSlug) {
+        try {
+          await connectLocalDatabase(persistedSlug);
+          mainWindow.webContents.send("local-session-restored", {
+            etablissementSlug: persistedSlug,
+          });
+          console.log(
+            `🔄 Base locale rouverte directement pour "${persistedSlug}".`,
+          );
+        } catch (error: any) {
+          console.error(
+            "❌ Échec d'ouverture de la base locale persistée:",
+            error,
+          );
+        }
+      } else {
+        console.log(
+          "ℹ️ Aucun établissement connu — en attente d'une connexion.",
+        );
+      }
     }
 
     app.on("activate", () => {

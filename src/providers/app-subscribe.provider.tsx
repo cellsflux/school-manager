@@ -8,7 +8,27 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "motion/react";
+import {
+  ActionIcon,
+  Avatar,
+  Badge,
+  Button,
+  CloseButton,
+  Group,
+  Modal,
+  Notification,
+  Skeleton,
+  Stack,
+  Text,
+  ThemeIcon,
+} from "@mantine/core";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  LogOut,
+  RefreshCw,
+} from "lucide-react";
 import { useConnecter } from "@/hooks/useConnecter";
 import { useAuth } from "@/context/AuthContext";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -109,9 +129,7 @@ export const AbonnementProvider = ({
   const [showBanner, setShowBanner] = useState(true);
   // Détection de la route via React Router (source de vérité unique pour
   // le routing dans l'app) : dès qu'on n'est plus sur /login, isLoginRoute
-  // passe à false et banner/bulle/overlay se comportent en conséquence
-  // (l'overlay se ferme automatiquement si jamais il était affiché sur
-  // /login, et redevient éligible dès qu'on la quitte).
+  // passe à false et banner/bulle/overlay se comportent en conséquence.
   const location = useLocation();
   const isLoginRoute = location.pathname.includes("/login");
 
@@ -121,8 +139,7 @@ export const AbonnementProvider = ({
       const id = safeGetItem(LS_KEY_ID);
       if (!id) {
         // Pas d'id = pas d'utilisateur connu : on ne bloque pas, on ne sait
-        // simplement pas encore (typiquement sur /login). Les composants
-        // flottants (banner/bulle/overlay) resteront silencieux.
+        // simplement pas encore (typiquement sur /login).
         if (!ignore) {
           setState((prev) => ({
             ...prev,
@@ -152,12 +169,9 @@ export const AbonnementProvider = ({
 
       const trialEndsAt = data.trialEndsAt ?? null;
       // Donnée brute renvoyée par l'API : c'est la SEULE source de vérité
-      // pour savoir si l'accès est expiré. Pas de recalcul local, pas de
-      // dépendance à trialEndsAt (les abonnements payés n'en ont pas).
+      // pour savoir si l'accès est expiré.
       const subscriptionStatus = data.subscriptionStatus;
 
-      // daysRemaining/isExpiringSoon restent purement informatifs (affichage
-      // du compte à rebours pour les essais), ils ne décident jamais du blocage.
       const daysRemaining = trialEndsAt
         ? calculateDaysRemaining(trialEndsAt)
         : null;
@@ -213,8 +227,8 @@ export const AbonnementProvider = ({
         state.daysRemaining,
       )} restant${plural(state.daysRemaining)}`;
     }
-    if (isActive) return "Abonnement actif ✓";
-    if (isExpired) return "⚠️ Abonnement expiré";
+    if (isActive) return "Abonnement actif";
+    if (isExpired) return "Abonnement expiré";
     return "Chargement...";
   };
 
@@ -243,18 +257,11 @@ export const AbonnementProvider = ({
 
   // Déclenche la vérification IMMÉDIATEMENT dès qu'on a une route valide
   // et qu'on n'a pas encore de données fiables (status "unknown"/"loading").
-  // Sans ça, si l'id apparaît dans le localStorage après le login (navigation
-  // SPA, sans remount du provider), il fallait attendre le prochain
-  // intervalle (jusqu'à 1h) ou rafraîchir la page pour voir le blocker/badge
-  // se mettre à jour — ce qui n'était pas logique pour l'utilisateur.
   useEffect(() => {
     if (isLoginRoute) return;
     if (state.status === "unknown" || state.status === "loading") {
       refreshAbonnement();
     }
-    // On ne dépend que de isLoginRoute et state.status : on ne relance pas
-    // à chaque changement de route une fois que le statut est connu, pour
-    // éviter des appels réseau inutiles à chaque navigation.
   }, [isLoginRoute, state.status, refreshAbonnement]);
 
   const value: AbonnementContextType = {
@@ -291,7 +298,6 @@ const AbonnementStatusBubble = () => {
     state,
     isTrial,
     isActive,
-    isExpired,
     isLoading,
     isLoginRoute,
     getStatusMessage,
@@ -318,165 +324,37 @@ const AbonnementStatusBubble = () => {
     state.status !== "unknown" &&
     state.status !== "expired";
 
-  const colors = isTrial
-    ? { bg: "#f59e0b", dot: "white" }
-    : isActive
-      ? { bg: "#16a34a", dot: "white" }
-      : { bg: "#6b7280", dot: "white" };
+  if (!visible) return null;
+
+  const color = isTrial ? "orange" : isActive ? "green" : "gray";
 
   return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          key="abonnement-status-bubble"
-          initial={{ opacity: 0, x: -60, scale: 0.9 }}
-          animate={{ opacity: 1, x: 0, scale: 1 }}
-          exit={{ opacity: 0, x: -40, scale: 0.9 }}
-          transition={{ type: "spring", stiffness: 300, damping: 24 }}
-          style={{
-            position: "fixed",
-            bottom: "20px",
-            left: "20px",
-            zIndex: 9999,
-          }}
-        >
-          <div
-            style={{
-              position: "relative",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "10px",
-              background: colors.bg,
-              color: "white",
-              padding: "10px 10px 10px 16px",
-              borderRadius: "999px",
-              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.25)",
-              fontSize: "14px",
-              fontWeight: 600,
-            }}
-          >
-            {/* pointe façon bulle, orientée vers le bas-gauche */}
-            <div
-              style={{
-                position: "absolute",
-                bottom: "-7px",
-                left: "22px",
-                width: "14px",
-                height: "14px",
-                background: colors.bg,
-                transform: "rotate(45deg)",
-                borderRadius: "3px",
-              }}
-            />
-
-            {isTrial && (
-              <motion.span
-                animate={{ opacity: [1, 0.4, 1] }}
-                transition={{ duration: 1.4, repeat: Infinity }}
-                style={{
-                  width: "8px",
-                  height: "8px",
-                  borderRadius: "50%",
-                  background: colors.dot,
-                  flexShrink: 0,
-                }}
-              />
-            )}
-            {isActive && (
-              <span
-                style={{
-                  width: "8px",
-                  height: "8px",
-                  borderRadius: "50%",
-                  background: colors.dot,
-                  flexShrink: 0,
-                }}
-              />
-            )}
-
-            <span>{getStatusMessage()}</span>
-
-            <motion.button
-              aria-label="Rafraîchir l'état de l'abonnement"
-              onClick={refreshAbonnement}
-              disabled={isLoading}
-              whileHover={{
-                scale: 1.1,
-                backgroundColor: "rgba(255,255,255,0.3)",
-              }}
-              whileTap={{ scale: 0.9 }}
-              style={{
-                background: "rgba(255,255,255,0.18)",
-                border: "none",
-                color: "white",
-                cursor: "pointer",
-                borderRadius: "999px",
-                width: "26px",
-                height: "26px",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <motion.svg
-                animate={isLoading ? { rotate: 360 } : { rotate: 0 }}
-                transition={
-                  isLoading
-                    ? { duration: 1, repeat: Infinity, ease: "linear" }
-                    : { duration: 0 }
-                }
-                style={{ width: "14px", height: "14px" }}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </motion.svg>
-            </motion.button>
-
-            <motion.button
-              aria-label="Masquer ce message"
-              onClick={() => setDismissed(true)}
-              whileHover={{
-                scale: 1.1,
-                backgroundColor: "rgba(255,255,255,0.3)",
-              }}
-              whileTap={{ scale: 0.9 }}
-              style={{
-                background: "rgba(255,255,255,0.18)",
-                border: "none",
-                color: "white",
-                cursor: "pointer",
-                borderRadius: "999px",
-                width: "22px",
-                height: "22px",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "11px",
-                flexShrink: 0,
-              }}
-            >
-              ✕
-            </motion.button>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <Notification
+      icon={isTrial ? <Clock size={18} /> : <CheckCircle2 size={18} />}
+      color={color}
+      withCloseButton
+      onClose={() => setDismissed(true)}
+      style={{
+        position: "fixed",
+        bottom: 20,
+        left: 20,
+        zIndex: 9999,
+        maxWidth: 380,
+      }}
+    >
+      <Group gap="xs" wrap="nowrap" justify="space-between">
+        <Text size="sm" fw={600}>
+          {getStatusMessage()}
+        </Text>
+      </Group>
+    </Notification>
   );
 };
 
-// ============ BANNER "BULLE" EN BAS A DROITE ============
+// ============ BANNER EN BAS A DROITE ============
 const AbonnementBannerContent = () => {
-  const { state, showBanner, isTrial, isLoginRoute, getActionButton } =
+  const { state, showBanner, setShowBanner, isLoginRoute, getActionButton } =
     useAbonnement();
-  const { setShowBanner } = useAbonnement();
 
   const visible =
     showBanner &&
@@ -487,201 +365,75 @@ const AbonnementBannerContent = () => {
     state.status !== "expired" &&
     state.isExpiringSoon;
 
+  if (!visible) return null;
+
   const action = getActionButton();
 
   return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          key="abonnement-bubble"
-          initial={{ opacity: 0, x: 60, scale: 0.9 }}
-          animate={{ opacity: 1, x: 0, scale: 1 }}
-          exit={{ opacity: 0, x: 40, scale: 0.9 }}
-          transition={{ type: "spring", stiffness: 300, damping: 24 }}
-          style={{
-            position: "fixed",
-            bottom: "20px",
-            right: "20px",
-            zIndex: 9999,
-            maxWidth: "400px",
-            width: "100%",
-          }}
-        >
-          {/* Corps de la bulle */}
-          <div
-            style={{
-              position: "relative",
-              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-              borderRadius: "18px",
-              boxShadow: "0 10px 40px rgba(0, 0, 0, 0.3)",
-              padding: "20px",
-              border: "1px solid rgba(255, 255, 255, 0.2)",
-            }}
+    <Notification
+      color="violet"
+      icon={<Clock size={20} />}
+      title={`Attention — ${state.daysRemaining} jour${plural(
+        state.daysRemaining,
+      )}`}
+      withCloseButton
+      onClose={() => setShowBanner(false)}
+      style={{
+        position: "fixed",
+        bottom: 20,
+        right: 20,
+        zIndex: 9999,
+        maxWidth: 400,
+      }}
+    >
+      <Stack gap="sm">
+        <Text size="sm">
+          {`Votre ${
+            state.status === "trial" ? "période d'essai gratuite" : "abonnement"
+          } se termine dans ${state.daysRemaining} jour${plural(
+            state.daysRemaining,
+          )}. ${
+            state.status === "trial"
+              ? "Passez à un forfait payant pour continuer."
+              : "Renouvelez maintenant pour ne pas perdre l'accès."
+          }`}
+        </Text>
+        {action && (
+          <Button
+            component="a"
+            href={action.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="white"
+            color="violet"
+            fullWidth
+            rightSection={<span>→</span>}
           >
-            {/* Petite pointe façon bulle de discussion */}
-            <div
-              style={{
-                position: "absolute",
-                bottom: "-8px",
-                right: "36px",
-                width: "18px",
-                height: "18px",
-                background: "#764ba2",
-                transform: "rotate(45deg)",
-                borderRadius: "3px",
-              }}
-            />
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "space-between",
-                marginBottom: "12px",
-              }}
-            >
-              <div
-                style={{
-                  color: "white",
-                  fontSize: "14px",
-                  fontWeight: 600,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                }}
-              >
-                <motion.span
-                  animate={{ scale: [1, 1.15, 1] }}
-                  transition={{ duration: 1.4, repeat: Infinity }}
-                >
-                  ⏰
-                </motion.span>
-                <span>Attention</span>
-                <span
-                  style={{
-                    background: "rgba(255, 255, 255, 0.2)",
-                    padding: "2px 10px",
-                    borderRadius: "12px",
-                    color: "white",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                  }}
-                >
-                  {state.daysRemaining} jour{plural(state.daysRemaining)}
-                </span>
-              </div>
-
-              <motion.button
-                aria-label="Fermer la notification"
-                onClick={() => setShowBanner(false)}
-                whileHover={{
-                  scale: 1.08,
-                  backgroundColor: "rgba(255,255,255,0.3)",
-                }}
-                whileTap={{ scale: 0.92 }}
-                style={{
-                  background: "rgba(255, 255, 255, 0.2)",
-                  border: "none",
-                  color: "white",
-                  cursor: "pointer",
-                  padding: "4px 8px",
-                  borderRadius: "6px",
-                  fontSize: "16px",
-                }}
-              >
-                ✕
-              </motion.button>
-            </div>
-
-            <div
-              style={{
-                color: "rgba(255, 255, 255, 0.95)",
-                fontSize: "13px",
-                lineHeight: 1.5,
-                marginBottom: "16px",
-              }}
-            >
-              {isTrial
-                ? `Votre période d'essai gratuite se termine dans ${state.daysRemaining} jour${plural(
-                    state.daysRemaining,
-                  )}. Passez à un forfait payant pour continuer.`
-                : `Votre abonnement expire dans ${state.daysRemaining} jour${plural(
-                    state.daysRemaining,
-                  )}. Renouvelez maintenant pour ne pas perdre l'accès.`}
-            </div>
-
-            {action && (
-              <motion.a
-                href={action.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                whileHover={{
-                  scale: 1.02,
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                }}
-                whileTap={{ scale: 0.98 }}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "8px",
-                  width: "100%",
-                  padding: "10px 16px",
-                  background: "white",
-                  color: "#764ba2",
-                  border: "none",
-                  borderRadius: "8px",
-                  fontWeight: 600,
-                  fontSize: "14px",
-                  textDecoration: "none",
-                }}
-              >
-                {action.text}
-                <svg
-                  style={{ width: "16px", height: "16px" }}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M14 5l7 7m0 0l-7 7m7-7H3"
-                  />
-                </svg>
-              </motion.a>
-            )}
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+            {action.text}
+          </Button>
+        )}
+      </Stack>
+    </Notification>
   );
 };
 
 // ============ OVERLAY BLOQUANT POUR ABONNEMENT EXPIRE ============
-// Volontairement pas de style "bulle" ici : c'est un blocker plein écran.
 const AbonnementOverlayContent = () => {
   const { state, isTrial, isLoginRoute, getActionButton } = useAbonnement();
   const { logout } = useAuth();
   const action = getActionButton();
-  // ✅ useNavigate() est un hook : il doit être appelé au niveau supérieur
-  // du composant, jamais à l'intérieur d'un handler (ex: onClick / async fn).
-  // C'est ce déplacement qui corrige l'erreur "Invalid hook call".
+  // useNavigate() est un hook : il doit être appelé au niveau supérieur
+  // du composant, jamais à l'intérieur d'un handler.
   const navigate = useNavigate();
 
   // Blocker affiché UNIQUEMENT si : on a de vraies données d'établissement,
   // le statut est réellement "expired" (donnée brute de l'API), et on n'est
-  // pas déjà sur l'écran de connexion. Réactif immédiatement : dès que
-  // refreshAbonnement met à jour le state, shouldBlock bascule sans délai.
-  // Une fois déconnecté, logout() redirige vers /login via l'AuthProvider,
-  // isLoginRoute passe à true, et la modale se masque d'elle-même.
+  // pas déjà sur l'écran de connexion.
   const shouldBlock =
     !isLoginRoute && !!state.etablissement && state.status === "expired";
 
   // Blocage "hyper interactif" : on verrouille le scroll de la page tant
-  // que le blocker est affiché, pour qu'il n'y ait aucune interaction
-  // possible avec le contenu derrière.
+  // que le blocker est affiché.
   useEffect(() => {
     if (!shouldBlock) return;
     const previousOverflow = document.body.style.overflow;
@@ -691,8 +443,6 @@ const AbonnementOverlayContent = () => {
     };
   }, [shouldBlock]);
 
-  // ✅ Simple fonction (pas de hook à l'intérieur). localStorage.removeItem
-  // est synchrone, donc pas besoin de `await` dessus.
   const disconnected = async () => {
     try {
       localStorage.removeItem(LS_KEY_ID);
@@ -703,260 +453,74 @@ const AbonnementOverlayContent = () => {
   };
 
   return (
-    <AnimatePresence>
-      {shouldBlock && (
-        <motion.div
-          key="abonnement-overlay"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.35 }}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 99999,
-            backgroundColor: "rgba(0, 0, 0, 0.20)",
-            backdropFilter: "blur(3px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "20px",
-          }}
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            transition={{ type: "spring", stiffness: 260, damping: 24 }}
-            style={{
-              backgroundColor: "white",
-              borderRadius: "24px",
-              maxWidth: "500px",
-              width: "100%",
-              padding: "40px",
-              textAlign: "center",
-              boxShadow: "0 50px 100px -20px rgba(0, 0, 0, 0.5)",
-              position: "relative",
-              overflow: "hidden",
-            }}
+    <Modal
+      opened={shouldBlock}
+      onClose={() => {}}
+      withCloseButton={false}
+      closeOnClickOutside={false}
+      closeOnEscape={false}
+      centered
+      size="lg"
+      overlayProps={{ backgroundOpacity: 0.45, blur: 3 }}
+    >
+      <Stack align="center" gap="md">
+        <ThemeIcon color="red" size={80} radius="xl" variant="light">
+          <AlertTriangle size={44} />
+        </ThemeIcon>
+
+        <Text size="xl" fw={700} ta="center">
+          {isTrial ? "Période d'essai terminée" : "Abonnement expiré"}
+        </Text>
+
+        <Text c="dimmed" ta="center">
+          {isTrial
+            ? "Votre période d'essai gratuite est terminée. Pour continuer à utiliser nos services, veuillez souscrire à un abonnement."
+            : "Votre abonnement a expiré. Vous n'avez plus accès aux fonctionnalités premium."}
+        </Text>
+
+        {state.trialEndsAt && (
+          <Text size="sm" c="dimmed">
+            Date d'expiration :{" "}
+            {new Date(state.trialEndsAt).toLocaleDateString("fr-FR", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </Text>
+        )}
+
+        {action && (
+          <Button
+            component="a"
+            href={action.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            color="red"
+            size="md"
+            fullWidth
+            rightSection={<span>→</span>}
           >
-            <div
-              style={{
-                position: "absolute",
-                top: "-100px",
-                right: "-100px",
-                width: "300px",
-                height: "300px",
-                background:
-                  "radial-gradient(circle, #fee2e2 0%, transparent 70%)",
-                borderRadius: "50%",
-                opacity: 0.3,
-              }}
-            />
-            <div
-              style={{
-                position: "absolute",
-                bottom: "-100px",
-                left: "-100px",
-                width: "300px",
-                height: "300px",
-                background:
-                  "radial-gradient(circle, #fef3c7 0%, transparent 70%)",
-                borderRadius: "50%",
-                opacity: 0.3,
-              }}
-            />
+            {action.text}
+          </Button>
+        )}
 
-            <div style={{ position: "relative", zIndex: 1 }}>
-              <div
-                style={{
-                  width: "100px",
-                  height: "100px",
-                  margin: "0 auto 24px",
-                  background: "linear-gradient(135deg, #fee2e2, #fecaca)",
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  position: "relative",
-                }}
-              >
-                <motion.div
-                  animate={{ scale: [1, 1.25, 1], opacity: [0.7, 0, 0.7] }}
-                  transition={{
-                    duration: 2,
-                    repeat: Infinity,
-                    ease: "easeOut",
-                  }}
-                  style={{
-                    position: "absolute",
-                    inset: "-10px",
-                    borderRadius: "50%",
-                    border: "3px solid #fecaca",
-                  }}
-                />
-                <svg
-                  style={{ width: "50px", height: "50px", color: "#dc2626" }}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                  />
-                </svg>
-              </div>
+        <Button
+          variant="default"
+          size="md"
+          fullWidth
+          leftSection={<LogOut size={18} />}
+          onClick={disconnected}
+        >
+          Se déconnecter
+        </Button>
 
-              <h2
-                style={{
-                  fontSize: "28px",
-                  fontWeight: 700,
-                  color: "#111827",
-                  marginBottom: "12px",
-                }}
-              >
-                {isTrial ? "Période d'essai terminée" : "Abonnement expiré"}
-              </h2>
-
-              <p
-                style={{
-                  color: "#6b7280",
-                  fontSize: "16px",
-                  lineHeight: 1.6,
-                  marginBottom: "8px",
-                }}
-              >
-                {isTrial
-                  ? "Votre période d'essai gratuite est terminée. Pour continuer à utiliser nos services, veuillez souscrire à un abonnement."
-                  : "Votre abonnement a expiré. Vous n'avez plus accès aux fonctionnalités premium."}
-              </p>
-
-              {state.trialEndsAt && (
-                <span
-                  style={{
-                    color: "#9ca3af",
-                    fontSize: "14px",
-                    marginBottom: "32px",
-                    display: "block",
-                  }}
-                >
-                  Date d'expiration :{" "}
-                  {new Date(state.trialEndsAt).toLocaleDateString("fr-FR", {
-                    day: "2-digit",
-                    month: "2-digit",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              )}
-
-              {action && (
-                <motion.a
-                  href={action.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  whileHover={{
-                    scale: 1.02,
-                    boxShadow: "0 20px 30px -5px rgba(220, 38, 38, 0.4)",
-                  }}
-                  whileTap={{ scale: 0.98 }}
-                  style={{
-                    width: "100%",
-                    padding: "14px",
-                    background: "linear-gradient(135deg, #dc2626, #ea580c)",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "12px",
-                    fontSize: "16px",
-                    fontWeight: 600,
-                    textDecoration: "none",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "10px",
-                    boxShadow: "0 10px 25px -5px rgba(220, 38, 38, 0.3)",
-                  }}
-                >
-                  {action.text}
-                  <svg
-                    style={{ width: "20px", height: "20px" }}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M14 5l7 7m0 0l-7 7m7-7H3"
-                    />
-                  </svg>
-                </motion.a>
-              )}
-
-              <div
-                style={{
-                  marginTop: "24px",
-                  paddingTop: "24px",
-                  borderTop: "1px solid #f3f4f6",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "8px",
-                }}
-              >
-                <motion.button
-                  aria-label="Se déconnecter"
-                  onClick={disconnected}
-                  whileHover={{
-                    backgroundColor: "#f9fafb",
-                    borderColor: "#d1d5db",
-                  }}
-                  whileTap={{ scale: 0.98 }}
-                  style={{
-                    width: "100%",
-                    padding: "14px",
-                    background: "transparent",
-                    color: "#6b7280",
-                    border: "2px solid #e5e7eb",
-                    borderRadius: "12px",
-                    fontSize: "16px",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "10px",
-                  }}
-                >
-                  <svg
-                    style={{ width: "18px", height: "18px" }}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                    />
-                  </svg>
-                  Se déconnecter
-                </motion.button>
-
-                <p style={{ color: "#9ca3af", fontSize: "13px", margin: 0 }}>
-                  Vous serez redirigé vers la page de paiement sécurisé
-                </p>
-              </div>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        <Text size="xs" c="dimmed" ta="center">
+          Vous serez redirigé vers la page de paiement sécurisé
+        </Text>
+      </Stack>
+    </Modal>
   );
 };
 
@@ -966,132 +530,57 @@ export const WelcomeMessage = () => {
 
   if (isLoading || !state.etablissement) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        <motion.div
-          animate={{ opacity: [1, 0.5, 1] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
-          style={{
-            width: "40px",
-            height: "40px",
-            backgroundColor: "#e5e7eb",
-            borderRadius: "50%",
-          }}
-        />
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <motion.div
-            animate={{ opacity: [1, 0.5, 1] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-            style={{
-              width: "128px",
-              height: "16px",
-              backgroundColor: "#e5e7eb",
-              borderRadius: "4px",
-            }}
-          />
-          <motion.div
-            animate={{ opacity: [1, 0.5, 1] }}
-            transition={{ duration: 1.5, repeat: Infinity, delay: 0.15 }}
-            style={{
-              width: "96px",
-              height: "12px",
-              backgroundColor: "#e5e7eb",
-              borderRadius: "4px",
-            }}
-          />
-        </div>
-      </div>
+      <Group gap="md">
+        <Skeleton height={48} circle />
+        <Stack gap={6}>
+          <Skeleton height={16} width={128} />
+          <Skeleton height={12} width={96} />
+        </Stack>
+      </Group>
     );
   }
 
   const { etablissement } = state;
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-      <motion.div
-        whileHover={{ rotate: 360 }}
-        transition={{ duration: 0.6 }}
-        style={{
-          width: "48px",
-          height: "48px",
-          borderRadius: "50%",
-          background: "linear-gradient(to right, #3b82f6, #9333ea)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "white",
-          fontWeight: "bold",
-          fontSize: "20px",
-        }}
-      >
+    <Group gap="md" wrap="nowrap">
+      <Avatar size={48} radius="xl" color="violet">
         {etablissement.name?.charAt(0).toUpperCase() || "E"}
-      </motion.div>
-      <div>
-        <h1
-          style={{
-            fontSize: "20px",
-            fontWeight: "bold",
-            color: "#1f2937",
-            margin: 0,
-          }}
-        >
+      </Avatar>
+      <Stack gap={4}>
+        <Text size="lg" fw={700}>
           Bonjour, {etablissement.owener_name || "Administrateur"} 👋
-        </h1>
+        </Text>
 
-        {/* Texte de statut simple et calme ; les jours restants + le refresh
-            vivent maintenant dans la bulle flottante en bas à gauche. */}
-        <p style={{ fontSize: "14px", color: "#4b5563", margin: 0 }}>
-          {isTrial && (
-            <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span
-                style={{
-                  display: "inline-block",
-                  width: "8px",
-                  height: "8px",
-                  backgroundColor: "#f59e0b",
-                  borderRadius: "50%",
-                }}
-              />
-              Période d'essai
-            </span>
-          )}
-          {isActive && (
-            <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span
-                style={{
-                  display: "inline-block",
-                  width: "8px",
-                  height: "8px",
-                  backgroundColor: "#22c55e",
-                  borderRadius: "50%",
-                }}
-              />
-              Abonnement actif ✓
-            </span>
-          )}
-          {isExpired && (
-            <span
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                color: "#dc2626",
-              }}
-            >
-              <span
-                style={{
-                  display: "inline-block",
-                  width: "8px",
-                  height: "8px",
-                  backgroundColor: "#ef4444",
-                  borderRadius: "50%",
-                }}
-              />
-              Abonnement expiré
-            </span>
-          )}
-        </p>
-      </div>
-    </div>
+        {isTrial && (
+          <Badge
+            color="orange"
+            variant="light"
+            leftSection={<Clock size={12} />}
+          >
+            Période d'essai
+          </Badge>
+        )}
+        {isActive && (
+          <Badge
+            color="green"
+            variant="light"
+            leftSection={<CheckCircle2 size={12} />}
+          >
+            Abonnement actif
+          </Badge>
+        )}
+        {isExpired && (
+          <Badge
+            color="red"
+            variant="light"
+            leftSection={<AlertTriangle size={12} />}
+          >
+            Abonnement expiré
+          </Badge>
+        )}
+      </Stack>
+    </Group>
   );
 };
 
@@ -1112,125 +601,30 @@ export const AbonnementStatusBadge = () => {
     }
   }, [state.status]);
 
-  const getColor = () => {
-    if (isTrial) return { bg: "#fef3c7", text: "#92400e" };
-    if (isActive) return { bg: "#dcfce7", text: "#166534" };
-    if (isExpired) return { bg: "#fee2e2", text: "#991b1b" };
-    return { bg: "#f3f4f6", text: "#374151" };
-  };
+  if (dismissed) return null;
 
-  const colors = getColor();
-
-  return (
-    <AnimatePresence mode="wait">
-      {!dismissed && (
-        <motion.div
-          key={state.status}
-          initial={{ opacity: 0, y: -4, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 4, scale: 0.95 }}
-          transition={{ duration: 0.2 }}
-          style={{ position: "relative", display: "inline-block" }}
-        >
-          <div
-            style={{
-              position: "relative",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "4px 8px 4px 12px",
-              borderRadius: "9999px",
-              fontSize: "14px",
-              fontWeight: 500,
-              backgroundColor: colors.bg,
-              color: colors.text,
-            }}
-          >
-            {/* petite pointe façon bulle */}
-            <div
-              style={{
-                position: "absolute",
-                bottom: "-5px",
-                left: "16px",
-                width: "10px",
-                height: "10px",
-                background: colors.bg,
-                transform: "rotate(45deg)",
-                borderRadius: "2px",
-              }}
-            />
-            <span>{getStatusMessage()}</span>
-            <motion.button
-              aria-label="Masquer ce message"
-              onClick={() => setDismissed(true)}
-              whileHover={{ scale: 1.1, backgroundColor: "rgba(0,0,0,0.08)" }}
-              whileTap={{ scale: 0.9 }}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: colors.text,
-                cursor: "pointer",
-                borderRadius: "999px",
-                width: "18px",
-                height: "18px",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "11px",
-                lineHeight: 1,
-                padding: 0,
-                opacity: 0.7,
-              }}
-            >
-              ✕
-            </motion.button>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-};
-
-// ============ COMPOSANT REFRESH BUTTON ============
-export const AbonnementRefreshButton = () => {
-  const { refreshAbonnement, isLoading } = useAbonnement();
+  const color = isTrial
+    ? "orange"
+    : isActive
+      ? "green"
+      : isExpired
+        ? "red"
+        : "gray";
 
   return (
-    <motion.button
-      aria-label="Rafraîchir l'état de l'abonnement"
-      onClick={refreshAbonnement}
-      disabled={isLoading}
-      whileHover={{ scale: 1.05, color: "#374151" }}
-      whileTap={{ scale: 0.95 }}
-      title="Rafraîchir l'état de l'abonnement"
-      style={{
-        padding: "8px",
-        color: "#6b7280",
-        background: "none",
-        border: "none",
-        cursor: "pointer",
-        opacity: isLoading ? 0.5 : 1,
-      }}
-    >
-      <motion.svg
-        animate={isLoading ? { rotate: 360 } : { rotate: 0 }}
-        transition={
-          isLoading
-            ? { duration: 1, repeat: Infinity, ease: "linear" }
-            : { duration: 0 }
-        }
-        style={{ width: "20px", height: "20px" }}
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2"
-          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+    <Badge
+      color={color}
+      variant="light"
+      size="lg"
+      rightSection={
+        <CloseButton
+          size="xs"
+          onClick={() => setDismissed(true)}
+          aria-label="Masquer ce message"
         />
-      </motion.svg>
-    </motion.button>
+      }
+    >
+      {getStatusMessage()}
+    </Badge>
   );
 };

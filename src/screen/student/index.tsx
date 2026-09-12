@@ -1,6 +1,21 @@
 // StudentTablePage.tsx
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { GraduationCap, Eye, Pencil, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import {
+  GraduationCap,
+  Eye,
+  Pencil,
+  Trash2,
+  AlertTriangle,
+  Loader2,
+  X,
+  Phone,
+  MapPin,
+  Calendar,
+  Users,
+  Shield,
+  Camera,
+} from "lucide-react";
 import {
   DataTable,
   ColumnDef,
@@ -8,7 +23,7 @@ import {
   RowAction,
   DataTablePaginationProps,
 } from "@/components/datatable";
-import { Avatar } from "@mantine/core";
+import { Avatar, Dialog, Group, Button, Text } from "@mantine/core";
 import type { StudentFaceProfile } from "@/Ai/faceRecognition";
 import MultiFaceIdentifier from "@/components/ai/Facedetecto";
 import { useConnecter } from "@/hooks/useConnecter";
@@ -16,6 +31,7 @@ import {
   useFaceDetection,
   FaceDetectionLoader,
 } from "@/context/FaceDetectionContext";
+import FaceEnrollment from "@/components/ai/faceenrolement";
 
 // ---------------------------------------------------------------------------
 // 1. Le type métier - aligné avec le modèle Realm
@@ -296,34 +312,98 @@ const filters: FilterDef<Student>[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// 5. Actions (statiques)
+// 5. Modal de détails ("Voir") — lecture seule, style Tailwind
 // ---------------------------------------------------------------------------
-const rowActions: RowAction<Student>[] = [
-  {
-    key: "view",
-    label: "Voir",
-    icon: Eye,
-    onClick: (r) => console.log("Voir", r.id),
-  },
-  {
-    key: "edit",
-    label: "Modifier",
-    icon: Pencil,
-    onClick: (r) => console.log("Modifier", r.id),
-  },
-  {
-    key: "delete",
-    label: "Supprimer",
-    icon: Trash2,
-    className: "hover:text-red-500 dark:hover:text-red-400",
-    onClick: (r) => console.log("Supprimer", r.id),
-  },
-];
+function StudentDetailsModal({
+  student,
+  onClose,
+}: {
+  student: Student | null;
+  onClose: () => void;
+}) {
+  if (!student) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <StudentPhoto student={student} />
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {student.lname} {student.fname}
+              </h3>
+              <p className="font-mono text-[11px] text-gray-400">
+                {student.matricule}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-2.5 text-[12.5px] text-gray-600 dark:text-gray-300">
+          <p className="flex items-center gap-2">
+            <Calendar className="h-3.5 w-3.5 text-gray-400" />
+            Né(e) le {formatDate(student.dateOfBirth)} à {student.placeOfBirth}
+          </p>
+          {student.nationality && (
+            <p className="flex items-center gap-2">
+              <Users className="h-3.5 w-3.5 text-gray-400" />
+              {student.nationality}
+            </p>
+          )}
+          {student.phone && (
+            <p className="flex items-center gap-2">
+              <Phone className="h-3.5 w-3.5 text-gray-400" />
+              {student.phone}
+            </p>
+          )}
+          {student.address && (
+            <p className="flex items-center gap-2">
+              <MapPin className="h-3.5 w-3.5 text-gray-400" />
+              {student.address}
+            </p>
+          )}
+          {student.responsableName && (
+            <p className="flex items-center gap-2">
+              <Shield className="h-3.5 w-3.5 text-gray-400" />
+              {student.responsableName} ({student.responsableRelation}) ·{" "}
+              {student.responsablePhone}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-5 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-1.5 text-[12px] font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // 6. Sous-composant pour le contenu de la table
 // ---------------------------------------------------------------------------
 function StudentTableContent() {
+  const navigate = useNavigate();
   const { Student: StudentApi } = useConnecter();
   const { isReady: faceReady } = useFaceDetection();
 
@@ -341,6 +421,16 @@ function StudentTableContent() {
   const [activeFilters, setActiveFilters] = useState<Record<string, any>>({});
   const [sortKey, setSortKey] = useState<string>("identity");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // État pour la modal "Voir"
+  const [viewedStudent, setViewedStudent] = useState<Student | null>(null);
+
+  // État pour la confirmation de suppression (Mantine Dialog)
+  // https://mantine.dev/core/dialog/
+  const [deleteDialogOpened, setDeleteDialogOpened] = useState(false);
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Charger les données depuis l'API
   const fetchStudents = useCallback(async () => {
@@ -432,6 +522,96 @@ function StudentTableContent() {
     setPage(1);
   }, []);
 
+  // ---------------------------------------------------------------------
+  // Actions des lignes : voir / modifier / supprimer
+  // ---------------------------------------------------------------------
+
+  const handleView = useCallback((student: Student) => {
+    setViewedStudent(student);
+  }, []);
+
+  // "Modifier" : on navigue vers l'écran d'ajout, réutilisé en mode édition
+  // en lui passant l'étudiant existant (via le state de la route). Adapte
+  // le chemin "/students/add" si ta route s'appelle différemment.
+  const handleEdit = useCallback(
+    (student: Student) => {
+      navigate("/students/add", {
+        state: {
+          student: {
+            ...student,
+            // AddStudent attend `description` en number[] | string | null
+            // (il sait déjà parser la string JSON via parseStoredDescription),
+            // donc on transmet tel quel.
+          },
+        },
+      });
+    },
+    [navigate],
+  );
+
+  const handleAskDelete = useCallback((student: Student) => {
+    setStudentToDelete(student);
+    setDeleteError(null);
+    setDeleteDialogOpened(true);
+  }, []);
+
+  const closeDeleteDialog = useCallback(() => {
+    if (deleting) return; // on n'interrompt pas une suppression en cours
+    setDeleteDialogOpened(false);
+    setStudentToDelete(null);
+    setDeleteError(null);
+  }, [deleting]);
+
+  const confirmDelete = useCallback(async () => {
+    if (!studentToDelete) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = await StudentApi.delete({ id: studentToDelete.id });
+      if (result?.success) {
+        setDeleteDialogOpened(false);
+        setStudentToDelete(null);
+        // Recharge la page courante depuis le backend pour rester cohérent
+        // avec la pagination/le total après suppression.
+        await fetchStudents();
+      } else {
+        setDeleteError(
+          result?.message || "Erreur lors de la suppression de l'étudiant.",
+        );
+      }
+    } catch (error) {
+      console.error("Erreur lors de la suppression:", error);
+      setDeleteError("Une erreur est survenue lors de la suppression.");
+    } finally {
+      setDeleting(false);
+    }
+  }, [studentToDelete, StudentApi, fetchStudents]);
+
+  const rowActions: RowAction<Student>[] = useMemo(
+    () => [
+      {
+        key: "view",
+        label: "Voir",
+        icon: Eye,
+        onClick: handleView,
+      },
+      {
+        key: "edit",
+        label: "Modifier",
+        icon: Pencil,
+        onClick: handleEdit,
+      },
+      {
+        key: "delete",
+        label: "Supprimer",
+        icon: Trash2,
+        className: "hover:text-red-500 dark:hover:text-red-400",
+        onClick: handleAskDelete,
+      },
+    ],
+    [handleView, handleEdit, handleAskDelete],
+  );
+
   // Configuration de la pagination
   const paginationProps: DataTablePaginationProps = {
     currentPage: page,
@@ -464,6 +644,12 @@ function StudentTableContent() {
     <>
       {faceReady && (
         <MultiFaceIdentifier
+          targent_children={
+            <div className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-[13px] font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+              <Camera />
+              Recherhcer par image
+            </div>
+          }
           students={faceProfiles}
           onCropFace={(dataUrl, face) => {
             console.log(
@@ -497,11 +683,93 @@ function StudentTableContent() {
         onSearch={handleSearch}
         onFilterChange={handleFilterChange}
         onSortChange={handleSortChange}
-        onRowClick={(r) =>
-          console.log("Afficher les détails de l'étudiant:", r.id)
-        }
+        onRowClick={(r) => handleView(r)}
         serverSidePagination={true}
       />
+
+      {/* Modal "Voir" — détails en lecture seule */}
+      <StudentDetailsModal
+        student={viewedStudent}
+        onClose={() => setViewedStudent(null)}
+      />
+
+      {/* Confirmation de suppression — Mantine Dialog
+          https://mantine.dev/core/dialog/
+          Le contenu interne est stylé en Tailwind. Centrée au milieu de
+          l'écran (position top/left 50% + translate -50% via la classe
+          ci-dessous, le prop `position` seul ne fait que positionner le
+          coin de la Dialog, pas la centrer). */}
+      <style>{`
+        .student-delete-dialog {
+          transform: translate(-50%, -50%);
+        }
+      `}</style>
+      <Dialog
+        opened={deleteDialogOpened}
+        onClose={closeDeleteDialog}
+        withCloseButton={!deleting}
+        size="md"
+        radius="md"
+        position={{ top: "50%", left: "50%" }}
+        className="student-delete-dialog"
+        shadow="lg"
+      >
+        <div className="space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+              <AlertTriangle className="h-4.5 w-4.5 text-red-600 dark:text-red-400" />
+            </div>
+            <div className="min-w-0">
+              <Text
+                size="sm"
+                fw={600}
+                className="!text-gray-900 dark:!text-gray-100"
+              >
+                Voulez-vous supprimer cet étudiant ?
+              </Text>
+              {studentToDelete && (
+                <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
+                  <span className="font-medium text-gray-700 dark:text-gray-300">
+                    {studentToDelete.lname} {studentToDelete.fname}
+                  </span>{" "}
+                  ({studentToDelete.matricule}) sera définitivement supprimé.
+                  Cette action est irréversible.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {deleteError && (
+            <p className="rounded-lg bg-red-50 dark:bg-red-950/30 px-3 py-2 text-[11.5px] text-red-600 dark:text-red-400">
+              {deleteError}
+            </p>
+          )}
+
+          <Group justify="flex-end" gap="xs" mt="xs">
+            <Button
+              variant="default"
+              size="xs"
+              onClick={closeDeleteDialog}
+              disabled={deleting}
+            >
+              Annuler
+            </Button>
+            <Button
+              color="red"
+              size="xs"
+              onClick={confirmDelete}
+              disabled={deleting}
+              leftSection={
+                deleting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : null
+              }
+            >
+              {deleting ? "Suppression…" : "Supprimer"}
+            </Button>
+          </Group>
+        </div>
+      </Dialog>
     </>
   );
 }

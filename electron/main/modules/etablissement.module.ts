@@ -36,6 +36,25 @@ function normalizeAbonement(abonement: RawAbonement[] | undefined) {
   }));
 }
 
+type RawMoney = {
+  name?: string;
+  symbole?: string;
+  Taux_dollar?: string | number;
+};
+
+function normalizeMoney(money: RawMoney[] | undefined) {
+  if (!Array.isArray(money)) return [];
+  return money.map((m) => ({
+    name: m.name || "",
+    symbole: m.symbole || "",
+    // Le modèle déclare String → on force la conversion
+    Taux_dollar:
+      m.Taux_dollar !== undefined && m.Taux_dollar !== null
+        ? String(m.Taux_dollar)
+        : "",
+  }));
+}
+
 /**
  * Normalise un établissement reçu du backend vers la forme attendue par le
  * modèle local (rôles applatis, dates converties, valeurs par défaut...).
@@ -66,7 +85,16 @@ function normalizeEtablissement(raw: Record<string, any>) {
   if ("description" in raw) out.description = raw.description || "";
   if ("owener_name" in raw) out.owener_name = raw.owener_name || "";
   if ("owener_phone" in raw) out.owener_phone = raw.owener_phone || "";
-  if ("money" in raw) out.money = raw.money || [];
+  if ("token" in raw) out.token = raw.token || "";
+
+  if ("maticule_prefix" in raw) out.maticule_prefix = raw.maticule_prefix || "";
+  if ("matricule_lengh" in raw)
+    out.matricule_lengh =
+      typeof raw.matricule_lengh === "number"
+        ? raw.matricule_lengh
+        : Number(raw.matricule_lengh) || 0;
+
+  if ("money" in raw) out.money = normalizeMoney(raw.money);
   if ("subscriptionStatus" in raw)
     out.subscriptionStatus = raw.subscriptionStatus || "none";
   if ("trialEndsAt" in raw)
