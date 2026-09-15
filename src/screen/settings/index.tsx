@@ -1,318 +1,277 @@
-import React from "react";
+import React, { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  Container,
-  Grid,
-  Card,
-  Text,
-  Title,
-  Paper,
-  Group,
-  ThemeIcon,
-  Box,
-  useMantineTheme,
-  Button,
-  Switch,
-  SimpleGrid,
-  Center,
-  Stack,
-  Divider,
-  Badge,
-} from "@mantine/core";
-import {
-  Users,
-  UserCog,
-  School,
-  Coins,
-  UserPlus,
-  BarChart3,
-  CloudUpload,
-  Activity,
-  Building2,
-  ShieldCheck,
-  Smartphone,
-  MessageSquare,
-  Settings,
-  ChevronRight,
+  Search,
+  User,
+  Bell,
   Lock,
-  ChevronDown,
+  Palette,
+  Globe,
+  CreditCard,
+  Database,
+  HelpCircle,
+  Info,
+  LogOut,
+  Store,
+  Shield,
+  Smartphone,
 } from "lucide-react";
 
-// Data for the main settings cards
-const settingsSections = [
+interface SettingItem {
+  id: string;
+  path: string;
+  label: string;
+  description: string;
+  icon: React.ElementType;
+  iconBg: string;
+  danger?: boolean;
+}
+
+const ITEMS: SettingItem[] = [
   {
-    title: "Gestion des élèves",
-    icon: Users,
-    description: "Inscriptions, classes, jusqu'à 1 000 élèves",
-    path: "/students",
+    id: "profile",
+    path: "/settings/profil",
+    label: "Profil",
+    description: "Nom, photo, informations personnelles",
+    icon: User,
+    iconBg: "from-slate-500 to-slate-600",
   },
   {
-    title: "Gestion du personnel",
-    icon: UserCog,
-    description: "Employés, rôles, autorisations",
-    path: "/staff",
+    id: "shop",
+    path: "/settings/boutique",
+    label: "Ma boutique",
+    description: "Informations et paramètres de vente",
+    icon: Store,
+    iconBg: "from-orange-400 to-amber-500",
   },
   {
-    title: "Classes & sections",
-    icon: School,
-    description: "Maternelle, primaire, secondaire",
-    path: "/classes",
+    id: "billing",
+    path: "/settings/paiement",
+    label: "Paiement et facturation",
+    description: "Moyens de paiement, historique",
+    icon: CreditCard,
+    iconBg: "from-emerald-400 to-teal-500",
   },
   {
-    title: "Paiements & frais",
-    icon: Coins,
-    description: "Gestion des transactions et factures",
-    path: "/payments",
+    id: "notifications",
+    path: "/settings/notifications",
+    label: "Notifications",
+    description: "Alertes, sons, badges",
+    icon: Bell,
+    iconBg: "from-red-500 to-rose-500",
   },
   {
-    title: "Inscriptions",
-    icon: UserPlus,
-    description: "Suivi des inscriptions et réinscriptions",
-    path: "/enrollments",
+    id: "privacy",
+    path: "/settings/confidentialite",
+    label: "Confidentialité",
+    description: "Visibilité du profil, données",
+    icon: Lock,
+    iconBg: "from-indigo-500 to-blue-600",
   },
   {
-    title: "Rapports & statistiques",
-    icon: BarChart3,
-    description: "Analyses et données de l'établissement",
-    path: "/reports",
+    id: "security",
+    path: "/settings/securite",
+    label: "Sécurité",
+    description: "Mot de passe, connexions actives",
+    icon: Shield,
+    iconBg: "from-cyan-500 to-sky-600",
   },
   {
-    title: "Sauvegardes cloud",
-    icon: CloudUpload,
-    description: "3 sauvegardes/mois, rétention 1 jour",
-    path: "/backups",
+    id: "appearance",
+    path: "/settings/apparence",
+    label: "Apparence",
+    description: "Thème clair, sombre, automatique",
+    icon: Palette,
+    iconBg: "from-purple-500 to-fuchsia-500",
   },
   {
-    title: "Journal d'activité",
-    icon: Activity,
-    description: "Suivi des actions et événements",
-    path: "/logs",
+    id: "language",
+    path: "/settings/langue",
+    label: "Langue et région",
+    description: "Français (France)",
+    icon: Globe,
+    iconBg: "from-blue-400 to-indigo-500",
   },
   {
-    title: "Collaboration & équipe",
-    icon: Building2,
-    description: "Comptes utilisateurs, temps réel",
-    path: "/team",
+    id: "storage",
+    path: "/settings/stockage",
+    label: "Stockage et données",
+    description: "Cache, téléchargements, synchronisation",
+    icon: Database,
+    iconBg: "from-teal-500 to-emerald-600",
   },
   {
-    title: "Sécurité & SSO",
-    icon: ShieldCheck,
-    description: "Authentification unique, conformité",
-    path: "/security",
-  },
-  {
-    title: "Application mobile",
+    id: "devices",
+    path: "/settings/appareils",
+    label: "Appareils connectés",
+    description: "Mobile, web, bureau",
     icon: Smartphone,
-    description: "iOS & Android, synchronisation",
-    path: "/mobile",
+    iconBg: "from-gray-500 to-gray-600",
   },
   {
-    title: "Support & assistance",
-    icon: MessageSquare,
-    description: "Prioritaire, WhatsApp, dédié",
-    path: "/support",
+    id: "help",
+    path: "/settings/aide",
+    label: "Aide et assistance",
+    description: "FAQ, contacter le support",
+    icon: HelpCircle,
+    iconBg: "from-blue-500 to-cyan-500",
+  },
+  {
+    id: "about",
+    path: "/settings/a-propos",
+    label: "À propos",
+    description: "Version, mentions légales",
+    icon: Info,
+    iconBg: "from-slate-400 to-slate-500",
   },
 ];
 
-// Plan features data
-const planFeatures = [
-  { label: "Élèves max", value: "1 000" },
-  { label: "Comptes utilisateurs", value: "4" },
-  { label: "Sauvegardes / mois", value: "3" },
-  { label: "Sections", value: "3 (M-P-S)" },
-  { label: "Rétention logs", value: "1 jour" },
-  { label: "Support", value: "Prioritaire" },
-];
+const LOGOUT: SettingItem = {
+  id: "logout",
+  path: "/logout",
+  label: "Se déconnecter",
+  description: "Quitter votre session",
+  icon: LogOut,
+  iconBg: "from-red-500 to-red-600",
+  danger: true,
+};
 
-export default function SettingsHomePage() {
-  const theme = useMantineTheme();
+export default function SettingsGrid() {
+  const [query, setQuery] = useState("");
+  const navigate = useNavigate();
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return ITEMS;
+    return ITEMS.filter(
+      (item) =>
+        item.label.toLowerCase().includes(q) ||
+        item.description.toLowerCase().includes(q),
+    );
+  }, [query]);
+
+  const showLogout = !query.trim() && filtered.length > 0;
 
   return (
-    <Container size="lg" py="xl">
-      <Stack gap="xl">
-        {/* iOS Style Header */}
-        <Box>
-          <Text
-            size="xs"
-            c="dimmed"
-            tt="uppercase"
-            fw={600}
-            style={{ letterSpacing: 0.5 }}
-          >
-            Paramètres
-          </Text>
-          <Title order={1} fw={700} size="h2" style={{ letterSpacing: -0.5 }}>
-            One Target
-          </Title>
-          <Group gap="xs" mt={4}>
-            <Badge
-              size="sm"
-              color="gray"
-              variant="filled"
-              radius="sm"
-              style={{
-                backgroundColor: "#e5e5ea",
-                color: "#1c1c1e",
-                fontWeight: 500,
-              }}
+    <div className="min-h-screen w-full ">
+      <div className="max-w-270 mx-auto px-8 py-12">
+        {/* Header */}
+        <div className="mb-10">
+          <h1 className="text-[26px] font-semibold tracking-tight text-gray-900 dark:text-white">
+            Réglages
+          </h1>
+          <p className="text-[14px] text-gray-500 dark:text-gray-400 mt-1">
+            Gérez votre compte, votre boutique et vos préférences.
+          </p>
+        </div>
+
+        {/* Recherche */}
+        <div className="relative mb-8 max-w-sm">
+          <Search
+            size={16}
+            strokeWidth={2}
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+          />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Rechercher"
+            className="w-full rounded-full bg-white dark:bg-white/[0.05] border border-black/[0.08] dark:border-white/[0.08] pl-10 pr-4 py-2.5 text-[14px] text-gray-900 dark:text-white placeholder:text-gray-400 outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 transition-all duration-200"
+          />
+        </div>
+
+        {/* Grille */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filtered.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => navigate(item.path)}
+                className="group flex items-center gap-4 p-4 rounded-2xl bg-white dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-left transition-all duration-200 hover:bg-white dark:hover:bg-white/[0.06] hover:border-black/[0.1] dark:hover:border-white/[0.12] hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+              >
+                <span
+                  className={`flex items-center justify-center w-11 h-11 rounded-xl shrink-0 bg-gradient-to-br ${item.iconBg} shadow-sm`}
+                >
+                  <Icon size={20} className="text-white" strokeWidth={2.2} />
+                </span>
+
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-[14px] font-medium text-gray-900 dark:text-white truncate">
+                    {item.label}
+                  </h3>
+                  {item.description && (
+                    <p className="text-[12.5px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                      {item.description}
+                    </p>
+                  )}
+                </div>
+
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-gray-300 dark:text-gray-600 shrink-0 group-hover:text-gray-400 dark:group-hover:text-gray-500 group-hover:translate-x-0.5 transition-all duration-200"
+                >
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </button>
+            );
+          })}
+
+          {/* Déconnexion */}
+          {showLogout && (
+            <button
+              onClick={() => navigate(LOGOUT.path)}
+              className="group flex items-center gap-4 p-4 rounded-2xl bg-white dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-left transition-all duration-200 hover:bg-red-50 dark:hover:bg-red-500/[0.08] hover:border-red-200 dark:hover:border-red-500/20"
             >
-              Pro Team
-            </Badge>
-            <Text size="sm" c="dimmed">
-              • $350/mois
-            </Text>
-          </Group>
-        </Box>
+              <span className="flex items-center justify-center w-11 h-11 rounded-xl shrink-0 bg-gradient-to-br from-red-500 to-red-600 shadow-sm">
+                <LogOut size={20} className="text-white" strokeWidth={2.2} />
+              </span>
 
-        {/* iOS Style Stats Grid */}
-        <SimpleGrid cols={{ base: 3, sm: 6 }} spacing="sm">
-          {planFeatures.map((feature) => (
-            <Paper
-              key={feature.label}
-              p="sm"
-              radius="lg"
-              style={{
-                backgroundColor: "white",
-                border: "1px solid #e5e5ea",
-              }}
-            >
-              <Text
-                size="xs"
-                c="dimmed"
-                fw={500}
-                style={{ letterSpacing: 0.3 }}
+              <div className="flex-1 min-w-0">
+                <h3 className="text-[14px] font-medium text-red-600 dark:text-red-400 truncate">
+                  Se déconnecter
+                </h3>
+                <p className="text-[12.5px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                  Quitter votre session
+                </p>
+              </div>
+
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-red-200 dark:text-red-500/40 shrink-0 group-hover:translate-x-0.5 transition-transform duration-200"
               >
-                {feature.label}
-              </Text>
-              <Text size="md" fw={600} c="#1c1c1e">
-                {feature.value}
-              </Text>
-            </Paper>
-          ))}
-        </SimpleGrid>
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          )}
+        </div>
 
-        {/* iOS Style Settings Grid */}
-        <Grid gutter="sm">
-          {settingsSections.map((section) => (
-            <Grid.Col key={section.title} span={{ base: 12, sm: 6 }}>
-              <Paper
-                radius="lg"
-                p="sm"
-                style={{
-                  backgroundColor: "white",
-                  border: "1px solid #e5e5ea",
-                  transition: "all 0.2s ease",
-                  cursor: "pointer",
-                  "&:hover": {
-                    backgroundColor: "#f8f8fc",
-                  },
-                }}
-              >
-                <Group justify="space-between" align="center" wrap="nowrap">
-                  <Group
-                    gap="sm"
-                    wrap="nowrap"
-                    style={{ flex: 1, minWidth: 0 }}
-                  >
-                    <ThemeIcon
-                      size="md"
-                      radius="lg"
-                      variant="subtle"
-                      color="gray"
-                      style={{
-                        backgroundColor: "#f2f2f7",
-                        color: "#007aff",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <section.icon size={18} />
-                    </ThemeIcon>
-                    <Box style={{ flex: 1, minWidth: 0 }}>
-                      <Text size="sm" fw={500} c="#1c1c1e" truncate>
-                        {section.title}
-                      </Text>
-                      <Text size="xs" c="dimmed" truncate>
-                        {section.description}
-                      </Text>
-                    </Box>
-                  </Group>
-                  <Group gap="xs" wrap="nowrap">
-                    <Switch
-                      size="xs"
-                      defaultChecked
-                      styles={{
-                        track: {
-                          backgroundColor: "#34c759",
-                          borderColor: "#34c759",
-                          width: 36,
-                          height: 20,
-                        },
-                        thumb: {
-                          width: 16,
-                          height: 16,
-                        },
-                      }}
-                    />
-                    <ChevronRight size={14} color="#c6c6c8" />
-                  </Group>
-                </Group>
-              </Paper>
-            </Grid.Col>
-          ))}
-        </Grid>
-
-        {/* iOS Style Security Section */}
-        <Paper
-          radius="lg"
-          p="sm"
-          style={{
-            backgroundColor: "white",
-            border: "1px solid #e5e5ea",
-          }}
-        >
-          <Group justify="space-between" align="center" wrap="nowrap">
-            <Group gap="sm" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
-              <ThemeIcon
-                size="md"
-                radius="lg"
-                variant="subtle"
-                color="gray"
-                style={{
-                  backgroundColor: "#f2f2f7",
-                  color: "#007aff",
-                  flexShrink: 0,
-                }}
-              >
-                <Lock size={18} />
-              </ThemeIcon>
-              <Box style={{ flex: 1, minWidth: 0 }}>
-                <Text size="sm" fw={500} c="#1c1c1e">
-                  Sécurité & conformité
-                </Text>
-                <Text size="xs" c="dimmed">
-                  SSO, rétention personnalisée, questionnaires
-                </Text>
-              </Box>
-            </Group>
-            <ChevronRight size={14} color="#c6c6c8" />
-          </Group>
-        </Paper>
-
-        {/* iOS Style Footer */}
-        <Center>
-          <Stack gap={2} align="center">
-            <Text size="xs" c="dimmed" style={{ letterSpacing: 0.3 }}>
-              One Target • Version 4.2.1
-            </Text>
-            <Text size="xs" c="dimmed" style={{ letterSpacing: 0.3 }}>
-              {new Date().toLocaleDateString("fr-FR", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              })}
-            </Text>
-          </Stack>
-        </Center>
-      </Stack>
-    </Container>
+        {/* Aucun résultat */}
+        {filtered.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="flex items-center justify-center w-14 h-14 rounded-full bg-black/[0.04] dark:bg-white/[0.06] mb-4">
+              <Search size={22} className="text-gray-400" strokeWidth={2} />
+            </div>
+            <p className="text-[14px] text-gray-500 dark:text-gray-400">
+              Aucun résultat pour « {query} »
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

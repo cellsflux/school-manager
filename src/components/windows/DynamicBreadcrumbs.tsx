@@ -38,7 +38,12 @@ export function DynamicBreadcrumbs() {
   });
 
   return (
-    <Breadcrumbs separator=">" separatorMargin={rem(6)} mb="md">
+    <Breadcrumbs
+      className=" sticky top-11 bg-[#f5f5f7] dark:bg-[#0b0b0d]"
+      separator=">"
+      separatorMargin={rem(6)}
+      mb="md"
+    >
       {items}
     </Breadcrumbs>
   );

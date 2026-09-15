@@ -687,12 +687,14 @@ export type StudentFaceProfile = {
   id: string;
   fname: string;
   lname: string;
+  fm_name: string;
   /** Empreinte stockée en base (champ `description` du schéma). Peut être
    *  un tableau, une string JSON, ou un objet array-like selon la source —
    *  voir `normalizeDescriptor`. */
   description: unknown;
   picture?: string;
   matricule?: string;
+  dateOfBirth?: string;
   [key: string]: unknown;
 };
 

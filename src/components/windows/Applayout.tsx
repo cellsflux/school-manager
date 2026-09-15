@@ -83,10 +83,9 @@ export const ProtectedLayout: React.FC = () => {
       </AppShell.Navbar>
 
       <AppShell.Main
+        className="bg-[#f5f5f7] dark:bg-[#0b0b0d]"
         style={{
           border: "none",
-          margin: "none",
-          padding: "none",
         }}
       >
         <DynamicBreadcrumbs />

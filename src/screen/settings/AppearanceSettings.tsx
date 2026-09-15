@@ -39,11 +39,11 @@ const colorPresets: { value: MantineColorKey; label: string; hex: string }[] = [
 
 const fontStack: Record<FontStackKey, string> = {
   system:
-    "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
+    "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif",
   inter: "'Inter', sans-serif",
   poppins: "'Poppins', sans-serif",
   roboto: "'Roboto', sans-serif",
-  mono: "",
+  mono: "'SF Mono', 'Menlo', monospace",
 };
 
 const radiusPx: Record<ComponentSize, number> = {
@@ -64,8 +64,8 @@ const scalePx: Record<ComponentSize, number> = {
 
 const shadowCss: Record<ShadowIntensity, string> = {
   flat: "none",
-  subtle: "0 1px 4px rgba(0,0,0,0.28)",
-  elevated: "0 8px 18px rgba(0,0,0,0.45)",
+  subtle: "0 1px 3px rgba(0,0,0,0.12)",
+  elevated: "0 6px 14px rgba(0,0,0,0.22)",
 };
 
 const letterSpacingPx: Record<LetterSpacing, string> = {
@@ -79,7 +79,7 @@ const fontLabel: Record<FontStackKey, string> = {
   inter: "Inter",
   poppins: "Poppins",
   roboto: "Roboto",
-  mono: "",
+  mono: "Mono",
 };
 
 const scaleLabel: Record<ComponentSize, string> = {
@@ -111,24 +111,49 @@ const shadowLabel: Record<ShadowIntensity, string> = {
 };
 
 // ————————————————————————————————————————————————
-// Shared building blocks
+// macOS-style building blocks
 // ————————————————————————————————————————————————
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+/** Groupe de réglages = carte blanche arrondie avec un titre au-dessus */
+function SettingsGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <Text
-      size="11px"
-      fw={700}
-      c="dimmed"
-      tt="uppercase"
-      style={{ letterSpacing: 0.7, marginBottom: 2 }}
-    >
-      {children}
-    </Text>
+    <Stack gap={8}>
+      <Text
+        size="xs"
+        fw={600}
+        c="dimmed"
+        style={{
+          paddingLeft: 4,
+          letterSpacing: 0.2,
+          fontFamily:
+            "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
+        }}
+      >
+        {title}
+      </Text>
+      <Paper
+        radius={14}
+        p={0}
+        style={{
+          background: "var(--mantine-color-body)",
+          border: "1px solid var(--mantine-color-default-border)",
+          overflow: "hidden",
+        }}
+      >
+        {children}
+      </Paper>
+    </Stack>
   );
 }
 
-function SettingsRow({
+/** Ligne de réglage : label à gauche, contrôle à droite, séparateur fin */
+function Row({
   label,
   description,
   children,
@@ -140,41 +165,48 @@ function SettingsRow({
   last?: boolean;
 }) {
   return (
-    <Group
-      align="flex-start"
-      justify="space-between"
-      wrap="nowrap"
-      py={12}
+    <Box
+      px={16}
+      py={11}
       style={{
         borderBottom: last
           ? "none"
           : "1px solid var(--mantine-color-default-border)",
       }}
     >
-      <Box style={{ width: 176, flexShrink: 0, paddingTop: 2 }}>
-        <Text size="sm" fw={500}>
-          {label}
-        </Text>
-        {description && (
-          <Text size="xs" c="dimmed" mt={2}>
-            {description}
+      <Group
+        align="center"
+        justify="space-between"
+        wrap="nowrap"
+        gap="lg"
+        style={{ minHeight: 32 }}
+      >
+        <Box style={{ flexShrink: 0, maxWidth: 220 }}>
+          <Text size="sm" fw={500}>
+            {label}
           </Text>
-        )}
-      </Box>
-      <Group gap={10} wrap="wrap" justify="flex-end" style={{ flex: 1 }}>
-        {children}
+          {description && (
+            <Text size="xs" c="dimmed" mt={1}>
+              {description}
+            </Text>
+          )}
+        </Box>
+        <Group gap={8} wrap="wrap" justify="flex-end" style={{ flex: 1 }}>
+          {children}
+        </Group>
       </Group>
-    </Group>
+    </Box>
   );
 }
 
+/** Tuile d'option façon macOS : petit aperçu + label en dessous */
 function OptionTile({
   selected,
   onClick,
   accent,
   preview,
   label,
-  width = 60,
+  width = 56,
 }: {
   selected: boolean;
   onClick: () => void;
@@ -186,7 +218,7 @@ function OptionTile({
   const [hovered, setHovered] = useState(false);
   return (
     <Stack
-      gap={5}
+      gap={4}
       align="center"
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
@@ -196,21 +228,21 @@ function OptionTile({
       <Box
         style={{
           width: "100%",
-          height: 40,
-          borderRadius: 9,
+          height: 36,
+          borderRadius: 8,
           overflow: "hidden",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           background: "var(--mantine-color-default-hover)",
-          border: `1.5px solid ${
+          border: `1px solid ${
             selected
               ? accent
               : hovered
                 ? "var(--mantine-color-dimmed)"
                 : "var(--mantine-color-default-border)"
           }`,
-          boxShadow: selected ? `0 0 0 3px ${accent}33` : "none",
+          boxShadow: selected ? `0 0 0 2.5px ${accent}33` : "none",
           transition: "border-color 120ms ease, box-shadow 120ms ease",
         }}
       >
@@ -220,6 +252,7 @@ function OptionTile({
         size="10px"
         c={selected ? undefined : "dimmed"}
         fw={selected ? 600 : 400}
+        style={{ lineHeight: 1.2 }}
       >
         {label}
       </Text>
@@ -227,6 +260,7 @@ function OptionTile({
   );
 }
 
+/** Pastille de couleur ronde façon macOS */
 function ColorCircle({
   hex,
   selected,
@@ -243,8 +277,8 @@ function ColorCircle({
       onClick={onClick}
       title={label}
       style={{
-        width: 28,
-        height: 28,
+        width: 24,
+        height: 24,
         borderRadius: "50%",
         background: hex,
         cursor: "pointer",
@@ -252,13 +286,13 @@ function ColorCircle({
         alignItems: "center",
         justifyContent: "center",
         boxShadow: selected
-          ? `0 0 0 2px var(--mantine-color-body), 0 0 0 4px ${hex}`
-          : "0 0 0 1px rgba(255,255,255,0.08) inset",
+          ? `0 0 0 2px var(--mantine-color-body), 0 0 0 3.5px ${hex}`
+          : "inset 0 0 0 1px rgba(0,0,0,0.08)",
         transition: "box-shadow 120ms ease",
       }}
     >
       {selected && (
-        <Text c="white" fw={700} style={{ fontSize: 12, lineHeight: 1 }}>
+        <Text c="white" fw={700} style={{ fontSize: 11, lineHeight: 1 }}>
           ✓
         </Text>
       )}
@@ -280,7 +314,7 @@ export function AppearanceSettings() {
 
   return (
     <Stack gap="lg" align="center">
-      <Box w={780}>
+      <Box w={720}>
         <Stack gap={2} mb="lg">
           <Title order={3}>Apparence</Title>
           <Text c="dimmed" size="sm">
@@ -288,288 +322,270 @@ export function AppearanceSettings() {
           </Text>
         </Stack>
 
-        {/* Thèmes prédéfinis */}
-        <Stack gap={8} mb="xl">
-          <SectionLabel>Thèmes prédéfinis</SectionLabel>
-          <Group gap={10} grow>
-            {themePresets.map((preset) => {
-              const active = settings.activePresetId === preset.id;
-              return (
-                <Paper
-                  key={preset.id}
-                  withBorder
-                  radius="md"
-                  p={0}
-                  style={{
-                    cursor: "pointer",
-                    overflow: "hidden",
-                    borderColor: active
-                      ? preset.swatch[0]
-                      : "var(--mantine-color-default-border)",
-                    borderWidth: active ? 2 : 1,
-                    transform: active ? "translateY(-1px)" : "none",
-                    boxShadow: active
-                      ? `0 4px 14px ${preset.swatch[0]}33`
-                      : "none",
-                    transition: "all 120ms ease",
-                  }}
-                  onClick={() => applyPreset(preset.id)}
-                >
-                  <div
-                    style={{
-                      height: 34,
-                      background: `linear-gradient(135deg, ${preset.swatch[0]}, ${preset.swatch[1]})`,
-                    }}
-                  />
-                  <Stack gap={1} p={7}>
-                    <Text size="xs" fw={600}>
-                      {preset.name}
-                    </Text>
-                    <Text size="10px" c="dimmed" lineClamp={1}>
-                      {preset.description}
-                    </Text>
-                  </Stack>
-                </Paper>
-              );
-            })}
-          </Group>
-        </Stack>
-
-        {/* Couleur */}
-        <Stack gap={2} mb="lg">
-          <SectionLabel>Couleur</SectionLabel>
-          <SettingsRow label="Couleur d'accent" last>
-            {colorPresets.map((c) => (
-              <ColorCircle
-                key={c.value}
-                hex={c.hex}
-                label={c.label}
-                selected={settings.primaryColor === c.value}
-                onClick={() => updateSetting("primaryColor", c.value)}
-              />
-            ))}
-          </SettingsRow>
-          <SettingsRow label="Dégradé début">
-            {colorPresets.slice(0, 7).map((c) => (
-              <ColorCircle
-                key={c.value}
-                hex={c.hex}
-                label={c.label}
-                selected={settings.gradientFrom === c.value}
-                onClick={() =>
-                  updateSetting("gradientFrom", c.value as MantineColorKey)
-                }
-              />
-            ))}
-          </SettingsRow>
-          <SettingsRow label="Dégradé  fin" last>
-            {colorPresets.slice(6, 13).map((c) => (
-              <ColorCircle
-                key={c.value}
-                hex={c.hex}
-                label={c.label}
-                selected={settings.gradientTo === c.value}
-                onClick={() =>
-                  updateSetting("gradientTo", c.value as MantineColorKey)
-                }
-              />
-            ))}
-          </SettingsRow>
-        </Stack>
-
-        {/* Apparence générale */}
-        <Stack gap={2} mb="lg">
-          <SectionLabel>Thème</SectionLabel>
-          <SettingsRow
-            label="Environnement"
-            description="Clair, sombre ou système"
-            last
-          >
-            <ColorSchemeToggle
-              onChange={(v) => updateSetting("colorScheme", v as any)}
-            />
-          </SettingsRow>
-        </Stack>
-
-        {/* Typographie */}
-        <Stack gap={2} mb="lg">
-          <SectionLabel>Typographie</SectionLabel>
-          <SettingsRow label="Police du texte">
-            {(Object.keys(fontStack) as FontStackKey[]).map((key) => (
-              <OptionTile
-                key={key}
-                accent={accent}
-                selected={settings.fontFamily === key}
-                onClick={() => updateSetting("fontFamily", key)}
-                label={fontLabel[key]}
-                preview={
-                  <Text style={{ fontFamily: fontStack[key], fontSize: 16 }}>
-                    Aa
-                  </Text>
-                }
-              />
-            ))}
-          </SettingsRow>
-          <SettingsRow label="Police des titres" last>
-            {(Object.keys(fontStack) as FontStackKey[]).map((key) => (
-              <OptionTile
-                key={key}
-                accent={accent}
-                selected={settings.headingFontFamily === key}
-                onClick={() => updateSetting("headingFontFamily", key)}
-                label={fontLabel[key]}
-                preview={
-                  <Text
-                    fw={700}
-                    style={{ fontFamily: fontStack[key], fontSize: 16 }}
-                  >
-                    Aa
-                  </Text>
-                }
-              />
-            ))}
-          </SettingsRow>
-        </Stack>
-
-        {/* Mise en page */}
-        <Stack gap={2} mb="lg">
-          <SectionLabel>Mise en page</SectionLabel>
-          <SettingsRow label="Taille des éléments">
-            {(Object.keys(scalePx) as ComponentSize[]).map((key) => (
-              <OptionTile
-                key={key}
-                accent={accent}
-                selected={settings.scale === key}
-                onClick={() => updateSetting("scale", key)}
-                label={scaleLabel[key]}
-                preview={
-                  <Box
-                    style={{
-                      width: scalePx[key],
-                      height: scalePx[key],
-                      borderRadius: 4,
-                      background: "var(--mantine-color-dimmed)",
-                    }}
-                  />
-                }
-              />
-            ))}
-          </SettingsRow>
-          <SettingsRow label="Arrondi des bordures">
-            {(Object.keys(radiusPx) as ComponentSize[]).map((key) => (
-              <OptionTile
-                key={key}
-                accent={accent}
-                selected={settings.radius === key}
-                onClick={() => updateSetting("radius", key)}
-                label={radiusLabel[key]}
-                preview={
-                  <Box
-                    style={{
-                      width: 26,
-                      height: 26,
-                      borderRadius: radiusPx[key],
-                      background: accent,
-                    }}
-                  />
-                }
-              />
-            ))}
-          </SettingsRow>
-          <SettingsRow label="Espacement des lettres" last>
-            {(Object.keys(letterSpacingPx) as LetterSpacing[]).map((key) => (
-              <OptionTile
-                key={key}
-                accent={accent}
-                selected={settings.letterSpacing === key}
-                onClick={() => updateSetting("letterSpacing", key)}
-                label={letterSpacingLabel[key]}
-                preview={
-                  <Text
-                    size="sm"
-                    fw={600}
-                    style={{ letterSpacing: letterSpacingPx[key] }}
-                  >
-                    Aa
-                  </Text>
-                }
-              />
-            ))}
-          </SettingsRow>
-        </Stack>
-
-        {/* Effets */}
-        <Stack gap={2} mb="lg">
-          <SectionLabel>Effets</SectionLabel>
-          <SettingsRow label="Intensité des ombres">
-            {(Object.keys(shadowCss) as ShadowIntensity[]).map((key) => (
-              <OptionTile
-                key={key}
-                accent={accent}
-                selected={settings.shadowIntensity === key}
-                onClick={() => updateSetting("shadowIntensity", key)}
-                label={shadowLabel[key]}
-                preview={
-                  <Box
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 5,
-                      background: "var(--mantine-color-body)",
-                      boxShadow: shadowCss[key],
-                    }}
-                  />
-                }
-              />
-            ))}
-          </SettingsRow>
-          <SettingsRow
-            label="Type de curseur"
-            description="Survol des éléments interactifs"
-          >
-            <OptionTile
-              accent={accent}
-              selected={settings.cursorType === "default"}
-              onClick={() => updateSetting("cursorType", "default")}
-              label="Par défaut"
-              preview={<Text style={{ fontSize: 16 }}>➤</Text>}
-            />
-            <OptionTile
-              accent={accent}
-              selected={settings.cursorType === "pointer"}
-              onClick={() => updateSetting("cursorType", "pointer")}
-              label="Pointeur"
-              preview={<Text style={{ fontSize: 16 }}>👆</Text>}
-            />
-          </SettingsRow>
-          <Group justify="space-between" wrap="nowrap" py={12}>
-            <Box>
-              <Text size="sm" fw={500}>
-                Contraste automatique
-              </Text>
-              <Text size="xs" c="dimmed">
-                Ajuste le texte sur fonds colorés
-              </Text>
+        <Stack gap="xl">
+          {/* Thèmes prédéfinis */}
+          <SettingsGroup title="Thèmes prédéfinis">
+            <Box p={14}>
+              <Group gap={10} grow>
+                {themePresets.map((preset) => {
+                  const active = settings.activePresetId === preset.id;
+                  return (
+                    <Paper
+                      key={preset.id}
+                      radius={10}
+                      p={0}
+                      style={{
+                        cursor: "pointer",
+                        overflow: "hidden",
+                        border: `1.5px solid ${
+                          active
+                            ? preset.swatch[0]
+                            : "var(--mantine-color-default-border)"
+                        }`,
+                        boxShadow: active
+                          ? `0 0 0 2.5px ${preset.swatch[0]}33`
+                          : "none",
+                        transition: "all 120ms ease",
+                      }}
+                      onClick={() => applyPreset(preset.id)}
+                    >
+                      <div
+                        style={{
+                          height: 32,
+                          background: `linear-gradient(135deg, ${preset.swatch[0]}, ${preset.swatch[1]})`,
+                        }}
+                      />
+                      <Stack gap={1} p={8}>
+                        <Text size="xs" fw={600}>
+                          {preset.name}
+                        </Text>
+                        <Text size="10px" c="dimmed" lineClamp={1}>
+                          {preset.description}
+                        </Text>
+                      </Stack>
+                    </Paper>
+                  );
+                })}
+              </Group>
             </Box>
-            <Switch
-              color={settings.primaryColor}
-              checked={settings.autoContrast}
-              onChange={(e) =>
-                updateSetting("autoContrast", e.currentTarget.checked)
-              }
-            />
-          </Group>
+          </SettingsGroup>
+
+          {/* Couleur */}
+          <SettingsGroup title="Couleur">
+            <Row label="Couleur d'accent">
+              {colorPresets.map((c) => (
+                <ColorCircle
+                  key={c.value}
+                  hex={c.hex}
+                  label={c.label}
+                  selected={settings.primaryColor === c.value}
+                  onClick={() => updateSetting("primaryColor", c.value)}
+                />
+              ))}
+            </Row>
+            <Row label="Dégradé début">
+              {colorPresets.slice(0, 7).map((c) => (
+                <ColorCircle
+                  key={c.value}
+                  hex={c.hex}
+                  label={c.label}
+                  selected={settings.gradientFrom === c.value}
+                  onClick={() =>
+                    updateSetting("gradientFrom", c.value as MantineColorKey)
+                  }
+                />
+              ))}
+            </Row>
+            <Row label="Dégradé fin" last>
+              {colorPresets.slice(6, 13).map((c) => (
+                <ColorCircle
+                  key={c.value}
+                  hex={c.hex}
+                  label={c.label}
+                  selected={settings.gradientTo === c.value}
+                  onClick={() =>
+                    updateSetting("gradientTo", c.value as MantineColorKey)
+                  }
+                />
+              ))}
+            </Row>
+          </SettingsGroup>
+
+          {/* Thème */}
+          <SettingsGroup title="Thème">
+            <Row
+              label="Environnement"
+              description="Clair, sombre ou système"
+              last
+            >
+              <ColorSchemeToggle
+                onChange={(v) => updateSetting("colorScheme", v as any)}
+              />
+            </Row>
+          </SettingsGroup>
+
+          {/* Typographie */}
+          <SettingsGroup title="Typographie">
+            <Row label="Police du texte">
+              {(Object.keys(fontStack) as FontStackKey[]).map((key) => (
+                <OptionTile
+                  key={key}
+                  accent={accent}
+                  selected={settings.fontFamily === key}
+                  onClick={() => updateSetting("fontFamily", key)}
+                  label={fontLabel[key]}
+                  preview={
+                    <Text style={{ fontFamily: fontStack[key], fontSize: 15 }}>
+                      Aa
+                    </Text>
+                  }
+                />
+              ))}
+            </Row>
+            <Row label="Police des titres" last>
+              {(Object.keys(fontStack) as FontStackKey[]).map((key) => (
+                <OptionTile
+                  key={key}
+                  accent={accent}
+                  selected={settings.headingFontFamily === key}
+                  onClick={() => updateSetting("headingFontFamily", key)}
+                  label={fontLabel[key]}
+                  preview={
+                    <Text
+                      fw={700}
+                      style={{ fontFamily: fontStack[key], fontSize: 15 }}
+                    >
+                      Aa
+                    </Text>
+                  }
+                />
+              ))}
+            </Row>
+          </SettingsGroup>
+
+          {/* Mise en page */}
+          <SettingsGroup title="Mise en page">
+            <Row label="Taille des éléments">
+              {(Object.keys(scalePx) as ComponentSize[]).map((key) => (
+                <OptionTile
+                  key={key}
+                  accent={accent}
+                  selected={settings.scale === key}
+                  onClick={() => updateSetting("scale", key)}
+                  label={scaleLabel[key]}
+                  preview={
+                    <Box
+                      style={{
+                        width: scalePx[key] * 0.7,
+                        height: scalePx[key] * 0.7,
+                        borderRadius: 4,
+                        background: "var(--mantine-color-dimmed)",
+                      }}
+                    />
+                  }
+                />
+              ))}
+            </Row>
+            <Row label="Arrondi des bordures">
+              {(Object.keys(radiusPx) as ComponentSize[]).map((key) => (
+                <OptionTile
+                  key={key}
+                  accent={accent}
+                  selected={settings.radius === key}
+                  onClick={() => updateSetting("radius", key)}
+                  label={radiusLabel[key]}
+                  preview={
+                    <Box
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: Math.min(radiusPx[key], 11),
+                        background: accent,
+                      }}
+                    />
+                  }
+                />
+              ))}
+            </Row>
+            <Row label="Espacement des lettres" last>
+              {(Object.keys(letterSpacingPx) as LetterSpacing[]).map((key) => (
+                <OptionTile
+                  key={key}
+                  accent={accent}
+                  selected={settings.letterSpacing === key}
+                  onClick={() => updateSetting("letterSpacing", key)}
+                  label={letterSpacingLabel[key]}
+                  preview={
+                    <Text
+                      size="sm"
+                      fw={600}
+                      style={{ letterSpacing: letterSpacingPx[key] }}
+                    >
+                      Aa
+                    </Text>
+                  }
+                />
+              ))}
+            </Row>
+          </SettingsGroup>
+
+          {/* Effets */}
+          <SettingsGroup title="Effets">
+            <Row label="Intensité des ombres">
+              {(Object.keys(shadowCss) as ShadowIntensity[]).map((key) => (
+                <OptionTile
+                  key={key}
+                  accent={accent}
+                  selected={settings.shadowIntensity === key}
+                  onClick={() => updateSetting("shadowIntensity", key)}
+                  label={shadowLabel[key]}
+                  preview={
+                    <Box
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 5,
+                        background: "var(--mantine-color-body)",
+                        boxShadow: shadowCss[key],
+                      }}
+                    />
+                  }
+                />
+              ))}
+            </Row>
+            <Row label="Type de curseur" description="Survol des éléments">
+              <OptionTile
+                accent={accent}
+                selected={settings.cursorType === "default"}
+                onClick={() => updateSetting("cursorType", "default")}
+                label="Défaut"
+                preview={<Text style={{ fontSize: 14 }}>➤</Text>}
+              />
+              <OptionTile
+                accent={accent}
+                selected={settings.cursorType === "pointer"}
+                onClick={() => updateSetting("cursorType", "pointer")}
+                label="Pointeur"
+                preview={<Text style={{ fontSize: 14 }}>👆</Text>}
+              />
+            </Row>
+            <Row
+              label="Contraste automatique"
+              description="Ajuste le texte sur fonds colorés"
+              last
+            >
+              <Switch
+                color={settings.primaryColor}
+                checked={settings.autoContrast}
+                onChange={(e) =>
+                  updateSetting("autoContrast", e.currentTarget.checked)
+                }
+              />
+            </Row>
+          </SettingsGroup>
         </Stack>
 
-        <Group justify="flex-end" mt="xs">
-          <Button
-            variant="subtle"
-            color="gray"
-            size="xs"
-            onClick={() => navigation.reload()}
-          >
-            Applique
-          </Button>
+        <Group justify="flex-end" mt="lg" gap="sm">
           <Button
             variant="subtle"
             color="gray"

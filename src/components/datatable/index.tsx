@@ -576,7 +576,7 @@ export function DataTable<T>({
   };
 
   return (
-    <div className="min-h-screen w-full font-sans  text-foreground transition-colors duration-200">
+    <div className=" w-full font-sans  text-foreground transition-colors duration-200">
       <style>{`
         .dt-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
         .dt-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }

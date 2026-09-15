@@ -28,6 +28,11 @@ import {
   Megaphone,
   Palette,
   Search,
+  GraduationCapIcon,
+  CalendarDaysIcon,
+  OrigamiIcon,
+  DollarSign,
+  Timeline,
 } from "lucide-react";
 export interface MenuItem {
   id: string;
@@ -53,7 +58,7 @@ export const menuItems: MenuItem[] = [
       {
         id: "students-list",
         icon: Users,
-        label: "Liste des étudiants",
+        label: "Elèves enregistrés",
         path: "/students",
       },
       {
@@ -69,10 +74,42 @@ export const menuItems: MenuItem[] = [
         path: "/students/enrollments",
       },
       {
-        id: "students-results",
+        id: "new-enrolement",
         icon: Award,
-        label: "Résultats",
+        label: "Nouvelle inscription",
         path: "/students/results",
+      },
+    ],
+  },
+  {
+    id: "school-activity",
+    icon: OrigamiIcon,
+    label: "Activités scolaire",
+    path: "/activity",
+    children: [
+      {
+        id: "year-scholl",
+        icon: CalendarDaysIcon,
+        label: "Années scolaire",
+        path: "/activity/year",
+      },
+      {
+        id: "frais-scolaire",
+        icon: DollarSign,
+        label: "Frais scolaire",
+        path: "/activity/money",
+      },
+      {
+        id: "communication",
+        icon: Timeline,
+        label: "Communiqués",
+        path: "/activity/deed",
+      },
+      {
+        id: "communication-messages",
+        icon: MessageSquare,
+        label: "Messages",
+        path: "/communication/messages",
       },
     ],
   },
@@ -206,62 +243,11 @@ export const menuItems: MenuItem[] = [
       },
     ],
   },
-  {
-    id: "communication",
-    icon: MessageSquare,
-    label: "Communication",
-    path: "/communication",
-    children: [
-      {
-        id: "communication-announcements",
-        icon: Megaphone,
-        label: "Annonces",
-        path: "/communication/announcements",
-      },
-      {
-        id: "communication-messages",
-        icon: MessageSquare,
-        label: "Messages",
-        path: "/communication/messages",
-      },
-      {
-        id: "communication-notifications",
-        icon: Bell,
-        label: "Notifications",
-        path: "/communication/notifications",
-      },
-    ],
-  },
+
   {
     id: "settings",
     icon: Settings,
     label: "Paramètres",
     path: "/settings",
-    children: [
-      {
-        id: "settings-institution",
-        icon: Building2,
-        label: "Établissement",
-        path: "/settings/institution",
-      },
-      {
-        id: "settings-users",
-        icon: Users,
-        label: "Utilisateurs",
-        path: "/settings/users",
-      },
-      {
-        id: "settings-documents",
-        icon: FolderOpen,
-        label: "Documents",
-        path: "/settings/documents",
-      },
-      {
-        id: "settings-appearance",
-        icon: Palette,
-        label: "Apparences",
-        path: "/settings/appearance",
-      },
-    ],
   },
 ];

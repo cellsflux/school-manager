@@ -3,7 +3,7 @@ import { app, BrowserWindow, Menu, ipcMain, safeStorage } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerModules } from "./ipc/registerModules";
-import { AppDatabases } from "../databases/db";
+import { AppDatabases, closeDatabase } from "../databases/db";
 import {
   initializeDeepLink,
   onDeepLink,
@@ -84,9 +84,18 @@ if (!gotTheLock) {
    * Ouvre la base locale correspondant au slug (si ce n'est pas déjà fait
    * pour ce même slug) et prévient le renderer que l'app est prête à
    * travailler hors-ligne sur cet établissement.
+   *
+   * ⚠️ connectDB() réutilise la connexion existante si elle est ouverte :
+   * sans close() préalable, un changement d'établissement renverrait
+   * silencieusement l'ANCIENNE base.
    */
   async function connectLocalDatabase(slug: string): Promise<void> {
     if (connectedEtablissementSlug === slug) return;
+
+    if (connectedEtablissementSlug !== null) {
+      closeDatabase();
+      connectedEtablissementSlug = null;
+    }
 
     await AppDatabases({ slug });
     connectedEtablissementSlug = slug;
@@ -207,6 +216,13 @@ if (!gotTheLock) {
         createWindow();
       }
     });
+  });
+
+  // Ferme proprement le fichier .realm avant de quitter (évite les .lock
+  // orphelins qui bloquent la réouverture au prochain lancement).
+  app.on("before-quit", () => {
+    closeDatabase();
+    connectedEtablissementSlug = null;
   });
 
   app.on("window-all-closed", () => {

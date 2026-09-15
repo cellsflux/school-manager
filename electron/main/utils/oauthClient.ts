@@ -1,12 +1,20 @@
 // electron/main/utils/oauthClient.ts
 import { shell } from "electron";
-import { generateCodeVerifier, generateCodeChallenge, generateState } from "./pkce";
+import axios from "axios";
+import {
+  generateCodeVerifier,
+  generateCodeChallenge,
+  generateState,
+} from "./pkce";
 
-// À adapter à ton environnement (dev vs prod). Peut aussi être lu depuis un
-// fichier de config / variable d'env packagée avec l'app.
+// URLs inchangées — dev comme prod tape sur localhost.
+// ⚠️ Si un jour tu héberges le backend ailleurs, remplace ces valeurs.
 const AUTHORIZE_URL =
-  process.env.CELLSFLUX_AUTHORIZE_URL || "http://localhost:3000"; // page qui rend <AuthFlow />
-const API_URL = process.env.CELLSFLUX_API_URL || "http://localhost:4000"; // backend direct
+  process.env.CELLSFLUX_AUTHORIZE_URL || "http://localhost:3000";
+const API_URL = process.env.CELLSFLUX_API_URL || "http://localhost:4000";
+
+console.log(`🌐 OAuth AUTHORIZE_URL = ${AUTHORIZE_URL}`);
+console.log(`🌐 OAuth API_URL       = ${API_URL}`);
 
 const CLIENT_ID = "scoolmanager";
 const REDIRECT_URI = "scoolmanager://auth/callback";
@@ -26,10 +34,6 @@ export type ExchangeResult = {
     isProfileComplete: boolean;
     provider: "password" | "google" | "apple";
   };
-  // L'établissement choisi par l'utilisateur sur le tableau de bord web
-  // avant de cliquer "Connecter à Scool Manager" — jamais null ici: le
-  // backend refuse de générer un code d'autorisation sans établissement
-  // sélectionné (voir POST /api/oauth/code côté serveur).
   etablissement: {
     id: string;
     name: string;
@@ -53,15 +57,22 @@ export type ExchangeResult = {
   };
 };
 
-// État PKCE de la tentative de login en cours. Une seule connexion à la fois
-// pour cette app desktop, donc une simple variable de module suffit.
 let pending: { verifier: string; state: string } | null = null;
 
+// Client axios dédié à l'échange OAuth.
+// timeout court : si l'API ne répond pas, on échoue vite et clairement.
+const api = axios.create({
+  baseURL: API_URL,
+  timeout: 15_000,
+  headers: {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  },
+});
+
 /**
- * Étape 1: génère verifier/challenge/state, ouvre le navigateur par défaut
- * sur la page de login CellsFlux avec les paramètres OAuth. Le verifier ne
- * quitte JAMAIS ce process à cette étape (seul le challenge, dérivé par
- * hash, part dans l'URL).
+ * Étape 1 : ouvre le navigateur par défaut sur la page de login CellsFlux
+ * avec les paramètres OAuth.
  */
 export function startLogin(): void {
   const verifier = generateCodeVerifier();
@@ -71,9 +82,6 @@ export function startLogin(): void {
   pending = { verifier, state };
 
   const url = new URL("/oauth/authorize", AUTHORIZE_URL);
-  // NB: si ta page de login est directement à la racine (app/page.tsx),
-  // remplace "/oauth/authorize" par "/" — ce qui compte c'est que
-  // AuthFlow lise bien ces query params via useSearchParams().
   url.searchParams.set("client_id", CLIENT_ID);
   url.searchParams.set("redirect_uri", REDIRECT_URI);
   url.searchParams.set("response_type", "code");
@@ -81,47 +89,70 @@ export function startLogin(): void {
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", state);
 
+  console.log("🔗 Ouverture du navigateur :", url.toString());
   shell.openExternal(url.toString());
 }
 
 /**
- * Étape 2: appelée quand le deep link scoolmanager://auth/callback?code=...
- * arrive. Échange le code contre de vrais tokens en prouvant qu'on détient
- * le code_verifier généré à l'étape 1.
+ * Étape 2 : échange le code OAuth contre les tokens via axios.
+ * Appelée quand le deep link scoolmanager://auth/callback?code=... arrive.
  */
 export async function exchangeCode(
   code: string,
   state?: string,
 ): Promise<ExchangeResult> {
   if (!pending) {
-    throw new Error("Aucune tentative de connexion en cours (verifier manquant).");
+    throw new Error(
+      "Aucune tentative de connexion en cours (verifier manquant).",
+    );
   }
 
   if (state && state !== pending.state) {
     pending = null;
-    throw new Error("state invalide, tentative de connexion rejetée (anti-CSRF).");
+    throw new Error(
+      "state invalide, tentative de connexion rejetée (anti-CSRF).",
+    );
   }
 
   const verifier = pending.verifier;
   pending = null; // usage unique, comme le code lui-même
 
-  const res = await fetch(`${API_URL}/api/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const target = `${API_URL}/api/oauth/token`;
+  console.log(`🔐 POST ${target}`);
+
+  try {
+    const { data } = await api.post<ExchangeResult>("/api/oauth/token", {
       grantType: "authorization_code",
       code,
       clientId: CLIENT_ID,
       redirectUri: REDIRECT_URI,
       codeVerifier: verifier,
-    }),
-  });
+    });
 
-  const data = await res.json();
+    console.log("✅ Échange OAuth réussi.");
+    return data;
+  } catch (err: any) {
+    if (axios.isAxiosError(err)) {
+      const status = err.response?.status;
+      const payload = err.response?.data;
 
-  if (!res.ok) {
-    throw new Error(data.detail || data.error || "Échange du code échoué.");
+      const detail =
+        (payload && (payload.detail || payload.error || payload.message)) ||
+        err.message ||
+        "Échange du code échoué.";
+
+      console.error("❌ Échange OAuth échoué:", {
+        status,
+        url: target,
+        code: err.code,
+        detail,
+        raw: payload,
+      });
+
+      throw new Error(status ? `[${status}] ${detail}` : detail);
+    }
+
+    console.error("❌ Échange OAuth échoué (non-axios):", err);
+    throw err;
   }
-
-  return data as ExchangeResult;
 }

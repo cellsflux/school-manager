@@ -168,17 +168,14 @@ const columns: ColumnDef<Student>[] = [
     key: "identity",
     header: "Nom & Prénom",
     sortable: true,
-    getValue: (r) => `${r.lname}${r.fname}`,
-    exportValue: (r) => `${r.lname} ${r.fname}`,
+    getValue: (r) => `${r.lname} ${r.fm_name} ${r.fname}`,
+    exportValue: (r) => `${r.lname} ${r.fm_name} ${r.fname}`,
     cell: (r) => (
       <div className="flex items-center gap-3">
         <StudentPhoto student={r} />
         <div className="min-w-0">
           <p className="truncate font-medium text-gray-900 dark:text-gray-100">
-            {r.lname} {r.fname}
-          </p>
-          <p className="truncate text-[10.5px] text-gray-400 dark:text-gray-500">
-            {r.fm_name}
+            {r.lname} {r.fm_name} {r.fname}
           </p>
         </div>
       </div>
@@ -337,7 +334,7 @@ function StudentDetailsModal({
             <StudentPhoto student={student} />
             <div>
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {student.lname} {student.fname}
+                {student.lname} {student.fm_name} {student.fname}
               </h3>
               <p className="font-mono text-[11px] text-gray-400">
                 {student.matricule}
@@ -781,7 +778,7 @@ export default function StudentTablePage() {
   return (
     <FaceDetectionLoader
       loadingComponent={
-        <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
+        <div className="flex flex-col items-center justify-center min-h-100 gap-3">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 dark:border-emerald-400"></div>
           <p className="text-gray-500 dark:text-gray-400 text-sm">
             Chargement des modèles de reconnaissance faciale...
@@ -792,7 +789,7 @@ export default function StudentTablePage() {
         </div>
       }
       errorComponent={
-        <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <div className="flex flex-col items-center justify-center min-h-100 gap-4">
           <div className="text-red-500 dark:text-red-400">
             <svg
               className="h-16 w-16"

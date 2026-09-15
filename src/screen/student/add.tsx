@@ -895,7 +895,7 @@ export const AddStudent: React.FC<AddStudentProps> = ({
   const isSummaryStep = currentStep === steps.length - 1;
 
   return (
-    <div className="w-full max-w-3xl mx-auto p-4 md:p-6">
+    <div className="w-full max-w-3xl mx-auto ">
       <div className="bg-card border border-border/50 rounded-2xl shadow-xs overflow-hidden">
         {/* Header avec progression */}
         <div className="p-6 border-b border-border bg-background/50">

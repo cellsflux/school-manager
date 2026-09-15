@@ -9,6 +9,8 @@ export function useDeepLink(onData: (data: DeepLinkData) => void) {
 
   useEffect(() => {
     const unsubscribe = window.events.on("deep-link-data", (data: any) => {
+      console.log("data from front");
+      console.log(data);
       savedCallback.current(data);
     });
 

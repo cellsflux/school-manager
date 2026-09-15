@@ -205,6 +205,7 @@ export default function Dashboard() {
       py={{ base: "md", sm: "xl" }}
       px={{ base: "sm", sm: "xl" }}
       style={{ overflow: "hidden", maxWidth: "100%" }}
+      className="bg-white dark:bg-[#0b0b0d]"
     >
       {/* Header */}
       <Stack gap={2} mb={{ base: "lg", sm: "xl" }}>
