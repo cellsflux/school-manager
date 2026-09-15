@@ -62,7 +62,7 @@ export default function MultiFaceIdentifier({
   unknownColor = "#f59e0b",
   badgeColor = "#2563eb",
   badgeUnknownColor = "#f59e0b",
-  actionColor = "#2563eb",
+  actionColor = "#218f10",
 }: Props) {
   const [opened, { open, close }] = useDisclosure(false);
 
@@ -279,7 +279,7 @@ export default function MultiFaceIdentifier({
                           className="absolute z-10 -translate-x-1/2 -translate-y-[calc(100%+6px)] whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium text-white shadow-lg transition hover:scale-105"
                         >
                           {known
-                            ? `${face.match!.lname} ${face.match!.fm_name} ${face.match!.fname}`
+                            ? `${face.match!.fname} ${face.match!.fm_name} ${face.match!.lname}`
                             : "Inconnu"}
                         </button>
                       </React.Fragment>
@@ -347,7 +347,7 @@ function UserInfoPanelPortal({
   face,
   onClose,
   onCrop,
-  actionColor = "#2563eb",
+  actionColor = "#218f10",
 }: UserInfoPanelPortalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -450,7 +450,7 @@ function UserInfoPanelPortal({
           <div className="flex w-full min-w-0 flex-col items-center">
             <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
               {match
-                ? `${match.lname} ${match.fm_name} ${match.fname}`
+                ? `${match.fname} ${match.fm_name} ${match.lname}`
                 : "Visage non reconnu"}
             </p>
             {match?.matricule && (

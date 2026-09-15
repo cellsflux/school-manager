@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import {
   User,
   Calendar,
@@ -48,6 +49,7 @@ interface AddStudentProps {
   // On accepte donc soit un array déjà parsé, soit cette string brute.
   initialData?: Partial<Omit<StudentFormData, "description">> & {
     description?: number[] | string | null;
+    _id?: string; // 👈 AJOUT : id MongoDB pour le mode édition
   };
   students?: StudentFaceProfile[];
   onSave?: (data: StudentFormData) => void;
@@ -77,6 +79,32 @@ function parseStoredDescription(
     );
     return null;
   }
+}
+
+/**
+ * Normalise les données entrantes (depuis prop `initialData` OU depuis
+ * `location.state.student` du router) vers le state interne du formulaire.
+ */
+function buildFormData(raw: any): StudentFormData {
+  return {
+    matricule: raw?.matricule || "",
+    fname: raw?.fname || "",
+    lname: raw?.lname || "",
+    fm_name: raw?.fm_name || "",
+    picture: raw?.picture || "",
+    description: parseStoredDescription(raw?.description),
+    dateOfBirth: raw?.dateOfBirth ? new Date(raw.dateOfBirth) : null,
+    placeOfBirth: raw?.placeOfBirth || "",
+    nationality: raw?.nationality || "",
+    gender: raw?.gender || "",
+    phone: raw?.phone || "",
+    address: raw?.address || "",
+    dad_name: raw?.dad_name || "",
+    mom_name: raw?.mom_name || "",
+    responsableName: raw?.responsableName || "",
+    responsableRelation: raw?.responsableRelation || "",
+    responsablePhone: raw?.responsablePhone || "",
+  };
 }
 
 // Composant d'alerte réutilisable
@@ -226,8 +254,8 @@ const IdentityStep: React.FC<StepProps> = ({
           </label>
           <input
             type="text"
-            value={data.lname}
-            onChange={(e) => updateData("lname", e.target.value)}
+            value={data.fname}
+            onChange={(e) => updateData("fname", e.target.value)}
             placeholder="Dupont"
             className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
           />
@@ -252,8 +280,8 @@ const IdentityStep: React.FC<StepProps> = ({
           </label>
           <input
             type="text"
-            value={data.fname}
-            onChange={(e) => updateData("fname", e.target.value)}
+            value={data.lname}
+            onChange={(e) => updateData("lname", e.target.value)}
             placeholder="Jean"
             className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
           />
@@ -269,7 +297,7 @@ const IdentityStep: React.FC<StepProps> = ({
             students={students}
             value={data.picture ?? null}
             onChange={handleFaceEnrollment}
-            onError={handleFaceError}
+            //onError={()=>handleFaceError}
           />
           <div className="flex-1">
             <p className="text-xs text-muted-foreground">
@@ -650,38 +678,44 @@ const SummaryStep: React.FC<{ data: StudentFormData }> = ({ data }) => {
 
 // Composant principal du formulaire multi-étapes
 export const AddStudent: React.FC<AddStudentProps> = ({
-  initialData = {},
+  initialData,
   students = [],
   onSave,
   onCancel,
   onSuccess,
 }) => {
   const { Student } = useConnecter();
+  const location = useLocation();
+
+  // 👇 Fusion : priorité à `initialData` (prop), sinon on lit depuis le router
+  //    (navigate("/students/add", { state: { student } }))
+  const routerStudent = (location.state as { student?: any } | null)?.student;
+  const mergedInitialData = initialData ?? routerStudent ?? {};
+
+  // Détection du mode édition
+  const isEditMode = Boolean(mergedInitialData?._id);
+
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formData, setFormData] = useState<StudentFormData>({
-    matricule: initialData.matricule || "",
-    fname: initialData.fname || "",
-    lname: initialData.lname || "",
-    fm_name: initialData.fm_name || "",
-    picture: initialData.picture || "",
-    description: parseStoredDescription(initialData.description),
-    dateOfBirth: initialData.dateOfBirth || null,
-    placeOfBirth: initialData.placeOfBirth || "",
-    nationality: initialData.nationality || "",
-    gender: initialData.gender || "",
-    phone: initialData.phone || "",
-    address: initialData.address || "",
-    dad_name: initialData.dad_name || "",
-    mom_name: initialData.mom_name || "",
-    responsableName: initialData.responsableName || "",
-    responsableRelation: initialData.responsableRelation || "",
-    responsablePhone: initialData.responsablePhone || "",
-  });
+  const [formData, setFormData] = useState<StudentFormData>(() =>
+    buildFormData(mergedInitialData),
+  );
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string>("");
+
+  // 👇 IMPORTANT : quand on navigue d'un étudiant à un autre SANS démonter
+  // le composant, `useState` ne réinitialise pas. On resynchronise sur `_id`.
+  useEffect(() => {
+    if (!mergedInitialData) return;
+    setFormData(buildFormData(mergedInitialData));
+    setCurrentStep(0);
+    setSubmitError(null);
+    setSubmitSuccess(false);
+    setSuccessMessage("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mergedInitialData?._id]);
 
   const steps = [
     { title: "Identité", icon: User, component: IdentityStep },
@@ -768,9 +802,8 @@ export const AddStudent: React.FC<AddStudentProps> = ({
       return;
     }
 
-    // CORRECTIF : garde-fou supplémentaire — s'assure que l'empreinte a
-    // bien la forme attendue (128 nombres) avant même d'appeler l'API,
-    // pour ne plus jamais enregistrer un étudiant avec une empreinte vide.
+    // Garde-fou : s'assure que l'empreinte a bien la forme attendue
+    // (128 nombres) avant même d'appeler l'API.
     if (
       !Array.isArray(formData.description) ||
       formData.description.length !== 128
@@ -816,29 +849,16 @@ export const AddStudent: React.FC<AddStudentProps> = ({
         return;
       }
 
-      // Préparer les données pour l'API
+      // Préparation du payload (identique dans les 2 cas, create & update)
       //
-      // CORRECTIF (bug "toujours Inconnu") : `description` (l'empreinte
-      // faciale, 128 nombres) était calculée et stockée dans le state du
-      // formulaire via handleFaceEnrollment(), mais n'était JAMAIS incluse
-      // dans ce payload envoyé à Student.create(). Le schéma appliquait
-      // donc sa valeur par défaut, et aucune comparaison faciale ne pouvait
-      // plus jamais matcher cet étudiant, y compris sur sa propre photo
-      // d'enrôlement.
-      //
-      // IMPORTANT : le champ `description` du schéma Realm/Mongoose est de
-      // type String (pas un array de nombres) :
-      //   description: { type: String }
-      // Il FAUT donc le sérialiser en JSON avant de l'envoyer, sinon l'ORM
-      // le convertit en la string "0.12,-0.03,..." (via toString() implicite
-      // sur l'array) ou rejette la valeur selon l'implémentation — dans les
-      // deux cas, illisible tel quel par JSON.parse() à la relecture.
+      // IMPORTANT : le champ `description` du schéma est de type String,
+      // il FAUT donc le sérialiser en JSON avant de l'envoyer.
       const studentData = {
         fname: formData.fname,
         lname: formData.lname,
         fm_name: formData.fm_name || "",
         picture: formData.picture,
-        description: JSON.stringify(formData.description), // <-- stringify obligatoire (schéma = String)
+        description: JSON.stringify(formData.description),
         dateOfBirth: formData.dateOfBirth,
         placeOfBirth: formData.placeOfBirth,
         nationality: formData.nationality || "",
@@ -852,34 +872,44 @@ export const AddStudent: React.FC<AddStudentProps> = ({
         responsableRelation: formData.responsableRelation || "",
       };
 
-      // Appeler l'API pour créer l'étudiant
-      const result = await Student.create({
-        student: studentData,
-        etablissementId: etablissementId,
-      });
+      // 👇 BRANCHEMENT CREATE / UPDATE
+      let result;
+      if (isEditMode && mergedInitialData._id) {
+        result = await Student.update({
+          id: mergedInitialData._id,
+          studentData: studentData as any, // Partial<Istudent> côté backend
+        });
+        navigation.back();
+      } else {
+        result = await Student.create({
+          student: studentData as any,
+          etablissementId,
+        });
+        navigation.navigate("/students");
+      }
 
       if (result.success) {
         setSubmitSuccess(true);
         setSuccessMessage(
-          result.message || "Étudiant enregistré avec succès !",
+          result.message ||
+            (isEditMode
+              ? "Étudiant mis à jour avec succès !"
+              : "Étudiant enregistré avec succès !"),
         );
 
-        // Appeler le callback onSave si fourni
-        if (onSave) {
-          onSave(formData);
-        }
+        // Callback parent
+        if (onSave) onSave(formData);
+        if (onSuccess) onSuccess();
 
-        // Appeler le callback onSuccess si fourni
-        if (onSuccess) {
-          onSuccess();
+        // En mode édition : on ne reset pas (le parent redirige en général).
+        // En mode création : reset comme avant.
+        if (!isEditMode) {
+          setTimeout(() => {
+            resetForm();
+            setSubmitSuccess(false);
+            setSuccessMessage("");
+          }, 2000);
         }
-
-        // Réinitialiser le formulaire après 2 secondes
-        setTimeout(() => {
-          resetForm();
-          setSubmitSuccess(false);
-          setSuccessMessage("");
-        }, 2000);
       } else {
         setSubmitError(result.message || "Erreur lors de l'enregistrement");
       }
@@ -901,9 +931,7 @@ export const AddStudent: React.FC<AddStudentProps> = ({
         <div className="p-6 border-b border-border bg-background/50">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-foreground">
-              {initialData.matricule
-                ? "Modifier l'étudiant"
-                : "Inscription étudiant"}
+              {isEditMode ? "Modifier l'étudiant" : "Inscription étudiant"}
             </h2>
             <span className="text-sm text-muted-foreground">
               Étape {currentStep + 1} / {steps.length}
@@ -1042,7 +1070,7 @@ export const AddStudent: React.FC<AddStudentProps> = ({
               ) : (
                 <>
                   <Check className="w-4 h-4" />
-                  {initialData.matricule ? "Mettre à jour" : "Envoyer"}
+                  {isEditMode ? "Mettre à jour" : "Envoyer"}
                 </>
               )}
             </button>

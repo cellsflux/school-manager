@@ -153,7 +153,7 @@ export default function SettingsGrid() {
   const showLogout = !query.trim() && filtered.length > 0;
 
   return (
-    <div className="min-h-screen w-full ">
+    <div className=" w-full ">
       <div className="max-w-270 mx-auto px-8 py-12">
         {/* Header */}
         <div className="mb-10">

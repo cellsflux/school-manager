@@ -168,14 +168,14 @@ const columns: ColumnDef<Student>[] = [
     key: "identity",
     header: "Nom & Prénom",
     sortable: true,
-    getValue: (r) => `${r.lname} ${r.fm_name} ${r.fname}`,
-    exportValue: (r) => `${r.lname} ${r.fm_name} ${r.fname}`,
+    getValue: (r) => `${r.fname} ${r.fm_name} ${r.lname}`,
+    exportValue: (r) => `${r.fname} ${r.fm_name} ${r.lname}`,
     cell: (r) => (
       <div className="flex items-center gap-3">
         <StudentPhoto student={r} />
         <div className="min-w-0">
           <p className="truncate font-medium text-gray-900 dark:text-gray-100">
-            {r.lname} {r.fm_name} {r.fname}
+            {r.fname} {r.fm_name} {r.lname}
           </p>
         </div>
       </div>
@@ -334,7 +334,7 @@ function StudentDetailsModal({
             <StudentPhoto student={student} />
             <div>
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {student.lname} {student.fm_name} {student.fname}
+                {student.fname} {student.fm_name} {student.lname}
               </h3>
               <p className="font-mono text-[11px] text-gray-400">
                 {student.matricule}
@@ -668,7 +668,7 @@ function StudentTableContent() {
         loading={loading}
         searchPlaceholder="Rechercher nom, matricule, téléphone…"
         searchFields={(r) =>
-          `${r.matricule} ${r.fname} ${r.lname} ${r.phone} ${r.responsableName}`
+          `${r.matricule} ${r.fname} ${r.fm_name} ${r.lname} ${r.phone} ${r.responsableName}`
         }
         filters={filters}
         defaultSortKey="identity"
@@ -727,7 +727,8 @@ function StudentTableContent() {
               {studentToDelete && (
                 <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">
                   <span className="font-medium text-gray-700 dark:text-gray-300">
-                    {studentToDelete.lname} {studentToDelete.fname}
+                    {studentToDelete.fname} {studentToDelete.fm_name}{" "}
+                    {studentToDelete.lname}
                   </span>{" "}
                   ({studentToDelete.matricule}) sera définitivement supprimé.
                   Cette action est irréversible.
