@@ -26,7 +26,7 @@ let mainWindow: BrowserWindow | null = null;
 // pas rouvrir la base si elle l'est déjà pour ce même slug.
 let connectedEtablissementSlug: string | null = null;
 
-const PROTOCOL = "scoolmanager";
+const PROTOCOL = "students";
 
 function registerProtocolHandler(): void {
   if (!app.isPackaged) {

@@ -16,8 +16,8 @@ const API_URL = process.env.CELLSFLUX_API_URL || "http://localhost:4000";
 console.log(`🌐 OAuth AUTHORIZE_URL = ${AUTHORIZE_URL}`);
 console.log(`🌐 OAuth API_URL       = ${API_URL}`);
 
-const CLIENT_ID = "scoolmanager";
-const REDIRECT_URI = "scoolmanager://auth/callback";
+const CLIENT_ID = "students";
+const REDIRECT_URI = "students://auth/callback";
 
 export type ExchangeResult = {
   accessToken: string;
@@ -95,7 +95,7 @@ export function startLogin(): void {
 
 /**
  * Étape 2 : échange le code OAuth contre les tokens via axios.
- * Appelée quand le deep link scoolmanager://auth/callback?code=... arrive.
+ * Appelée quand le deep link students://auth/callback?code=... arrive.
  */
 export async function exchangeCode(
   code: string,

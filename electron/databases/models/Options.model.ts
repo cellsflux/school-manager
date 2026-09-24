@@ -4,7 +4,7 @@ const OptionsScemant = ormSchema(
   {
     name: String,
     slug: String,
-    section_id: { type: "uuid", ref: "Section" },
+    section_id: { type: "objectId", ref: "Section" },
   },
   { timestamps: true },
 );

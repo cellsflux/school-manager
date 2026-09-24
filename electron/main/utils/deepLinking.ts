@@ -153,7 +153,7 @@ function setupDeepLinkListeners(): void {
     focusMainWindow();
 
     // Deep link ?
-    const deepLinkArg = argv.find((arg) => arg.startsWith("scoolmanager://"));
+    const deepLinkArg = argv.find((arg) => arg.startsWith("students://"));
     if (deepLinkArg) {
       console.log("🔗 [second-instance] Deep link intercepté:", deepLinkArg);
       handleIncomingUrl(deepLinkArg);
@@ -206,7 +206,11 @@ function handleIncomingUrl(url: string): void {
   focusMainWindow();
   notifyDeepLinkCallbacks(data);
 
-  if (data.success && data.action === "auth" && typeof data.params.code === "string") {
+  if (
+    data.success &&
+    data.action === "auth" &&
+    typeof data.params.code === "string"
+  ) {
     void runAuthExchange(data.params.code, data.params.state);
   }
 }
@@ -306,7 +310,7 @@ function handleFileOpen(filePath: string): FileOpenResult | null {
 function processCommandLineArgs(): void {
   const argv = process.argv;
 
-  const deepLinkArg = argv.find((arg) => arg.startsWith("scoolmanager://"));
+  const deepLinkArg = argv.find((arg) => arg.startsWith("students://"));
   if (deepLinkArg) {
     console.log("🔗 [cold start] Deep link trouvé dans argv:", deepLinkArg);
     setTimeout(() => handleIncomingUrl(deepLinkArg), 500);

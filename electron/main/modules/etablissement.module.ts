@@ -17,8 +17,6 @@ function normalizeRole(role: string | string[] | undefined): string {
 
 function normalizeUsers(users: RawUser[] | undefined) {
   if (!Array.isArray(users)) return [];
-  // On ignore silencieusement les entrées sans `user` plutôt que de planter
-  // dessus — une donnée mal formée ne doit pas bloquer tout l'établissement.
   return users
     .filter((u) => u && u.user)
     .map((u) => ({ user: u.user, role: normalizeRole(u.role) }));
@@ -40,29 +38,83 @@ type RawMoney = {
   name?: string;
   symbole?: string;
   Taux_dollar?: string | number;
+  // 👇 clés plates possibles (sérialisation IPC / Realm)
+  "money.name"?: string;
+  "money.symbole"?: string;
+  "money.Taux_dollar"?: string | number;
+  "money.TauxDollar"?: string | number;
+  moneyName?: string;
+  moneySymbole?: string;
+  moneyTauxDollar?: string | number;
 };
 
-function normalizeMoney(money: RawMoney[] | undefined) {
-  if (!Array.isArray(money)) return [];
-  return money.map((m) => ({
-    name: m.name || "",
-    symbole: m.symbole || "",
-    // Le modèle déclare String → on force la conversion
-    Taux_dollar:
-      m.Taux_dollar !== undefined && m.Taux_dollar !== null
-        ? String(m.Taux_dollar)
-        : "",
-  }));
+// ---------------------------------------------------------------------------
+// 💰 Devise par défaut : Franc Congolais (CDF)
+// ---------------------------------------------------------------------------
+const DEFAULT_MONEY = [
+  {
+    name: "Franc Congolais",
+    symbole: "CDF",
+    Taux_dollar: "1",
+  },
+];
+
+/**
+ * Extrait name / symbole / Taux_dollar d'une entrée, qu'elle soit
+ * au format normal ({ name, symbole, Taux_dollar }) OU au format à plat
+ * ({ 'money.name': ..., 'money.symbole': ..., 'money.Taux_dollar': ... }).
+ */
+function pickMoneyFields(m: RawMoney) {
+  const name = (m.name ?? m["money.name"] ?? m.moneyName ?? "")
+    .toString()
+    .trim();
+
+  const symbole = (m.symbole ?? m["money.symbole"] ?? m.moneySymbole ?? "")
+    .toString()
+    .trim();
+
+  const rawTaux =
+    m.Taux_dollar ??
+    m["money.Taux_dollar"] ??
+    m["money.TauxDollar"] ??
+    m.moneyTauxDollar;
+
+  const Taux_dollar =
+    rawTaux !== undefined && rawTaux !== null && String(rawTaux).trim() !== ""
+      ? String(rawTaux).trim()
+      : "1";
+
+  return { name, symbole, Taux_dollar };
 }
 
 /**
- * Normalise un établissement reçu du backend vers la forme attendue par le
- * modèle local (rôles applatis, dates converties, valeurs par défaut...).
- * Ne transforme QUE les champs présents dans `raw` — la même fonction sert
- * donc pour un document complet (init) ET une mise à jour partielle
- * (update), sans jamais écraser un champ non fourni avec un défaut vide.
- * Double comme liste blanche: un champ absent de cette fonction n'atteint
- * jamais le modèle, même s'il est présent dans les données reçues.
+ * Normalise les devises reçues :
+ * - Gère le format normal ET le format à plat ("money.name", "money.symbole"...)
+ * - Ignore les devises totalement vides
+ * - Force `Taux_dollar` en string avec fallback "1"
+ * - Si aucune devise valide n'est fournie, retourne la devise CDF par défaut
+ *   (voir DEFAULT_MONEY) quand `fallbackToDefault` est true.
+ */
+function normalizeMoney(
+  money: RawMoney[] | undefined,
+  fallbackToDefault = false,
+) {
+  const cleaned = Array.isArray(money)
+    ? money
+        .filter((m) => {
+          if (!m || typeof m !== "object") return false;
+          const { name, symbole } = pickMoneyFields(m);
+          return name !== "" || symbole !== "";
+        })
+        .map((m) => pickMoneyFields(m))
+    : [];
+
+  if (cleaned.length > 0) return cleaned;
+  return fallbackToDefault ? DEFAULT_MONEY : [];
+}
+
+/**
+ * Normalise un établissement reçu du backend.
  */
 function normalizeEtablissement(raw: Record<string, any>) {
   const out: Record<string, any> = {};
@@ -94,7 +146,20 @@ function normalizeEtablissement(raw: Record<string, any>) {
         ? raw.matricule_lengh
         : Number(raw.matricule_lengh) || 0;
 
-  if ("money" in raw) out.money = normalizeMoney(raw.money);
+  // 👇 money : on ne remplace QUE si on a au moins une devise valide.
+  //    Sinon on laisse le champ intact (update partiel safe).
+  if ("money" in raw) {
+    const cleaned = normalizeMoney(raw.money, false);
+    if (cleaned.length > 0) {
+      out.money = cleaned;
+    } else {
+      console.warn(
+        "[EtsModule] money reçu vide après normalisation — champ ignoré (les devises existantes sont conservées).",
+        raw.money,
+      );
+    }
+  }
+
   if ("subscriptionStatus" in raw)
     out.subscriptionStatus = raw.subscriptionStatus || "none";
   if ("trialEndsAt" in raw)
@@ -114,12 +179,14 @@ export const EtsModule = {
 
     const cleanData = normalizeEtablissement(etablissement);
 
-    // Garde-fous: échouer avec un message clair plutôt qu'un crash opaque
-    // plus loin dans l'ORM.
     if (!cleanData.id) {
       throw new Error(
         "Établissement reçu sans id — impossible de l'enregistrer localement",
       );
+    }
+
+    if (!cleanData.money || cleanData.money.length === 0) {
+      cleanData.money = normalizeMoney(undefined, true);
     }
 
     const exiteEtab = await EtablissmentModel.find({ id: cleanData.id });
@@ -133,6 +200,14 @@ export const EtsModule = {
 
       const updateData = normalizeEtablissement(rest);
 
+      const existingMoney = exiteEtab[0]?.money ?? [];
+      if (
+        (!updateData.money || updateData.money.length === 0) &&
+        (!existingMoney || existingMoney.length === 0)
+      ) {
+        updateData.money = normalizeMoney(undefined, true);
+      }
+
       if (Object.keys(updateData).length === 0) {
         throw new Error("Aucun champ valide à mettre à jour");
       }
@@ -143,7 +218,7 @@ export const EtsModule = {
         { new: true },
       );
 
-      return { etablissement: exiteEtab[0] };
+      return { etablissement: updated ?? exiteEtab[0] };
     }
 
     if (!cleanData.name || !cleanData.slug) {
@@ -153,9 +228,6 @@ export const EtsModule = {
     }
 
     try {
-      // Idempotent: si cet établissement existe déjà en local (reconnexion,
-      // double appel de init...), on le met à jour au lieu de risquer une
-      // erreur de contrainte unique sur `slug`/`id`.
       const existing = await EtablissmentModel.findOne({ id: cleanData.id });
 
       const res = existing
@@ -165,6 +237,7 @@ export const EtsModule = {
             { new: true },
           )
         : await EtablissmentModel.create(cleanData as any);
+
       console.log("etablissemet from database:");
       console.log(res);
       return { etablissement: res };
@@ -191,6 +264,16 @@ export const EtsModule = {
     }
 
     try {
+      const current = await EtablissmentModel.findOne({ id });
+      const existingMoney = current?.money ?? [];
+
+      if (
+        (!updateData.money || updateData.money.length === 0) &&
+        (!existingMoney || existingMoney.length === 0)
+      ) {
+        updateData.money = normalizeMoney(undefined, true);
+      }
+
       const updated = await EtablissmentModel.findOneAndUpdate(
         { id },
         updateData,
@@ -213,16 +296,54 @@ export const EtsModule = {
 
   getEts: async (id?: string) => {
     try {
-      const etablissements = await EtablissmentModel.find();
-
       if (id) {
         const etablissement = await EtablissmentModel.findOne({ id });
+
+        // 👇 On normalise `money` en sortie, même si c'est déjà en base,
+        //    pour garantir au frontend un format propre [{ name, symbole, Taux_dollar }]
+        if (etablissement) {
+          const money = normalizeMoney(etablissement.money as any, false);
+
+          if (money.length > 0) {
+            // Toujours valide → on renvoie tel quel (déjà propre ou re-normalisé)
+            return {
+              etablissement: {
+                ...etablissement,
+                money,
+              },
+            };
+          }
+
+          // Aucune devise valide (vide ou format cassé) → on injecte CDF
+          const patched = await EtablissmentModel.findOneAndUpdate(
+            { id },
+            { money: normalizeMoney(undefined, true) },
+            { new: true },
+          );
+          return { etablissement: patched ?? etablissement };
+        }
 
         return { etablissement };
       }
 
-      const etablissement = await EtablissmentModel.find();
-      return { etablissement: etablissement[0] };
+      const list = await EtablissmentModel.find();
+      const first = list?.[0];
+
+      if (first) {
+        const money = normalizeMoney(first.money as any, false);
+        if (money.length > 0) {
+          return { etablissement: { ...first, money } };
+        }
+
+        const patched = await EtablissmentModel.findOneAndUpdate(
+          { id: first.id },
+          { money: normalizeMoney(undefined, true) },
+          { new: true },
+        );
+        return { etablissement: patched ?? first };
+      }
+
+      return { etablissement: first };
     } catch (error: any) {
       console.error(
         "❌ [EtsModule.getEts] Échec de la lecture:",

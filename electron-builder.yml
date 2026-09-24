@@ -1,10 +1,10 @@
-appId: com.cellsflux.scoolmanager
-productName: Scool Manager
+appId: com.cellsflux.students
+productName: Students
 
 protocols:
-  - name: Scool Manager Protocol
+  - name: Students Protocol
     schemes:
-      - scoolmanager
+      - students
 
 directories:
   buildResources: resources
@@ -23,13 +23,13 @@ asarUnpack:
   - resources/**
 
 win:
-  executableName: Scool Manager
+  executableName: Students
   icon: resources/icon.ico
 
   fileAssociations:
     - ext: scx
-      name: Fichier Scool Manager
-      description: Fichier personnalisé pour Scool Manager
+      name: Fichier Students
+      description: Fichier personnalisé pour Students
       role: Editor
       icon: resources/scx.ico
 
@@ -50,7 +50,7 @@ mac:
 
   fileAssociations:
     - ext: scx
-      name: Fichier Scool Manager
+      name: Fichier Students
       role: Editor
       icon: resources/scx.icns
 
@@ -70,7 +70,7 @@ linux:
 
   fileAssociations:
     - ext: scx
-      name: Fichier Scool Manager
+      name: Fichier Students
       mimeType: application/x-scool-manager
       icon: resources/scx.png
 

@@ -1,3 +1,4 @@
+// databases/models/inscription.model.ts
 import { ormSchema } from "realm-mongoose-orm";
 
 const inscriptionSchema = ormSchema(
@@ -5,6 +6,11 @@ const inscriptionSchema = ormSchema(
     classeId: { type: "uuid", ref: "classe" },
     year: { type: "uuid", ref: "year" },
     sutudent: { type: "uuid", ref: "student" },
+
+    // ⚠️ Dénormalisé : recopié automatiquement depuis `classe.sections`
+    //    lors du create/update. NE JAMAIS saisir manuellement côté front.
+    section: { type: "uuid", ref: "Section" },
+
     dateInscription: { type: Date },
     numeroOrdre: { type: String },
     status: {

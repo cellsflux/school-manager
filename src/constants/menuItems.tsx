@@ -33,6 +33,7 @@ import {
   OrigamiIcon,
   DollarSign,
   Timeline,
+  UserPlus,
 } from "lucide-react";
 export interface MenuItem {
   id: string;
@@ -63,7 +64,7 @@ export const menuItems: MenuItem[] = [
       },
       {
         id: "students-add",
-        icon: Users,
+        icon: UserPlus,
         label: "Ajouter un élève",
         path: "/students/add",
       },
@@ -72,12 +73,6 @@ export const menuItems: MenuItem[] = [
         icon: ClipboardList,
         label: "Inscriptions",
         path: "/students/enrollments",
-      },
-      {
-        id: "new-enrolement",
-        icon: Award,
-        label: "Nouvelle inscription",
-        path: "/students/results",
       },
     ],
   },
@@ -97,7 +92,13 @@ export const menuItems: MenuItem[] = [
         id: "frais-scolaire",
         icon: DollarSign,
         label: "Frais scolaire",
-        path: "/activity/money",
+        path: "/fin/frais",
+      },
+      {
+        id: "paie-frais",
+        icon: DollarSign,
+        label: "Recevoirs les frais",
+        path: "/activity/top-up",
       },
       {
         id: "communication",
@@ -110,6 +111,33 @@ export const menuItems: MenuItem[] = [
         icon: MessageSquare,
         label: "Messages",
         path: "/communication/messages",
+      },
+    ],
+  },
+
+  {
+    id: "classes",
+    icon: School,
+    label: "Organisation",
+    path: "/org",
+    children: [
+      {
+        id: "dection-list",
+        icon: Building2,
+        label: "Section organisées",
+        path: "/org/list",
+      },
+      {
+        id: "classes-management",
+        icon: UserCog,
+        label: "Gestion des classes",
+        path: "/org/classes",
+      },
+      {
+        id: "options",
+        icon: CalendarDays,
+        label: "Options",
+        path: "/org/option",
       },
     ],
   },
@@ -136,32 +164,6 @@ export const menuItems: MenuItem[] = [
         icon: BarChart3,
         label: "Évaluations",
         path: "/teachers/evaluations",
-      },
-    ],
-  },
-  {
-    id: "classes",
-    icon: School,
-    label: "Classes",
-    path: "/classes",
-    children: [
-      {
-        id: "classes-list",
-        icon: Building2,
-        label: "Liste des classes",
-        path: "/classes/list",
-      },
-      {
-        id: "classes-management",
-        icon: UserCog,
-        label: "Gestion des classes",
-        path: "/classes/management",
-      },
-      {
-        id: "classes-planning",
-        icon: CalendarDays,
-        label: "Planning",
-        path: "/classes/planning",
       },
     ],
   },

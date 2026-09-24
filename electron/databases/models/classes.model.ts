@@ -3,10 +3,10 @@ import { ormSchema } from "realm-mongoose-orm";
 const ClasseSchema = ormSchema(
   {
     name: String,
-    option: { type: "uuid", default: "", required: false, ref: "Option" },
-    sections: { type: "uuid", ref: "Section" },
+    option: { type: "objectId", default: "", required: false, ref: "Option" },
+    sections: { type: "objectId", ref: "Section" },
     niveau: { type: Number },
-    titulaire: { type: "uuid", ref: "teache" },
+    titulaire: { type: "objectId", ref: "teache", required: false },
   },
   { timestamps: true },
 );

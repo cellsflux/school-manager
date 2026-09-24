@@ -7,7 +7,6 @@ const SectionsSchema = ormSchema(
     logo: { type: String, required: false, default: "" },
     description: { type: String },
     isActive: { type: Boolean, default: false },
-    etablissementId: { type: "uuid", ref: "Etablissement" },
   },
   { timestamps: true },
 );

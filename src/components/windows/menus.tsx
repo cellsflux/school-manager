@@ -378,11 +378,13 @@ export function TopMenu() {
 
         {/* Centre : composant de recherche, découplé */}
         {isAuthenticated && (
-          <TopMenuSearch
-            actions={spotlightActions}
-            isNarrow={isNarrow ?? false}
-            isVeryNarrow={isVeryNarrow ?? false}
-          />
+          <>
+            <TopMenuSearch
+              actions={spotlightActions}
+              isNarrow={isNarrow ?? false}
+              isVeryNarrow={isVeryNarrow ?? false}
+            />
+          </>
         )}
 
         {/* Droite : actions */}
