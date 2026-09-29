@@ -1,4 +1,6 @@
+// InscriptionTablePage.tsx
 import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ClipboardList,
   Eye,
@@ -11,7 +13,6 @@ import {
   Power,
   PowerOff,
   Layers,
-  Tag,
   Info,
 } from "lucide-react";
 import {
@@ -37,6 +38,47 @@ import { useDisclosure } from "@mantine/hooks";
 import { useConnecter } from "@/hooks/useConnecter";
 
 // ---------------------------------------------------------------------------
+// Helpers de nettoyage d'id
+// ---------------------------------------------------------------------------
+
+/**
+ * Extrait une string d'id propre, que l'entrée soit :
+ *  - une string simple
+ *  - un objet { _id, id }
+ *  - un BSON UUID sérialisé en JSON (avec guillemets ou préfixe UUID(...))
+ */
+function cleanId(v: unknown): string {
+  if (v == null) return "";
+  let s = String(v).trim();
+
+  // Enlève les guillemets JSON
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    try {
+      s = JSON.parse(s);
+    } catch {
+      s = s.slice(1, -1);
+    }
+  }
+
+  // Enlève les préfixes UUID(...) ou ObjectId(...)
+  s = s.replace(/^UUID\(["']?/i, "").replace(/["']?\)$/i, "");
+  s = s.replace(/^ObjectId\(["']?/i, "").replace(/["']?\)$/i, "");
+
+  return String(s).trim();
+}
+
+/**
+ * Récupère l'id d'un document (gère _id, id, et les formats BSON).
+ */
+function docId(doc: any): string {
+  if (!doc) return "";
+  return cleanId(doc.id ?? doc._id ?? "");
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 type InscriptionStatus = "active" | "transferred" | "abandoned" | "revoked";
@@ -52,15 +94,12 @@ type StudentLite = {
 };
 type YearLite = { id?: string; _id?: string; libelle?: string };
 type SectionLite = { id?: string; _id?: string; name?: string; logo?: string };
-type OptionLite = { id?: string; _id?: string; name?: string };
 type ClasseLite = {
   id?: string;
   _id?: string;
   name?: string;
   niveau?: number;
-  option?: string | null;
   sections?: string;
-  optionData?: OptionLite | null;
   sectionData?: SectionLite | null;
 };
 
@@ -85,11 +124,10 @@ type Inscription = {
   yearData?: YearLite | null;
   classeData?: ClasseLite | null;
   sectionData?: SectionLite | null;
-  optionData?: OptionLite | null;
 };
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers affichage
 // ---------------------------------------------------------------------------
 function formatDate(d?: Date | string | null): string {
   if (!d) return "—";
@@ -194,23 +232,6 @@ const columns: ColumnDef<Inscription>[] = [
     ),
   },
   {
-    key: "option",
-    header: "Option",
-    sortable: true,
-    getValue: (r) => r.optionData?.name ?? r.classeData?.optionData?.name ?? "",
-    cell: (r) => {
-      const name = r.optionData?.name ?? r.classeData?.optionData?.name;
-      return (
-        <div className="flex items-center gap-2">
-          <div className="h-6 w-6 rounded-full flex items-center justify-center bg-muted text-muted-foreground">
-            <Tag className="h-3 w-3" />
-          </div>
-          <span className="text-foreground">{name ?? "—"}</span>
-        </div>
-      );
-    },
-  },
-  {
     key: "year",
     header: "Année scolaire",
     sortable: true,
@@ -285,8 +306,6 @@ function InscriptionDetailsModal({
 }) {
   if (!inscription) return null;
   const s = inscription.studentData;
-  const optionName =
-    inscription.optionData?.name ?? inscription.classeData?.optionData?.name;
 
   return (
     <div
@@ -334,10 +353,6 @@ function InscriptionDetailsModal({
             {inscription.classeData?.name ??
               inscription.previewScollClassename ??
               "—"}
-          </p>
-          <p>
-            <span className="text-foreground font-medium">Option :</span>{" "}
-            {optionName ?? "—"}
           </p>
           <p>
             <span className="text-foreground font-medium">Année :</span>{" "}
@@ -398,7 +413,7 @@ function InscriptionDetailsModal({
 }
 
 // ---------------------------------------------------------------------------
-// Modal Formulaire (section retirée, n° d'ordre retiré, cascade Classe → Section/Options)
+// Modal Formulaire
 // ---------------------------------------------------------------------------
 function InscriptionFormModal({
   opened,
@@ -408,7 +423,7 @@ function InscriptionFormModal({
 }: {
   opened: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (created?: { studentId: string; type: string }) => void;
   editing: Inscription | null;
 }) {
   const {
@@ -417,14 +432,12 @@ function InscriptionFormModal({
     year: YearApi,
     section: SectionApi,
     classe: ClasseApi,
-    option: OptionApi,
   } = useConnecter();
 
   const [students, setStudents] = useState<StudentLite[]>([]);
   const [years, setYears] = useState<YearLite[]>([]);
   const [classes, setClasses] = useState<ClasseLite[]>([]);
   const [sections, setSections] = useState<SectionLite[]>([]);
-  const [options, setOptions] = useState<OptionLite[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(false);
 
   const [studentId, setStudentId] = useState<string | null>(null);
@@ -444,26 +457,21 @@ function InscriptionFormModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Charge tout
+  // Charge tous les référentiels
   useEffect(() => {
     if (!opened) return;
     let cancelled = false;
     (async () => {
       setLoadingRefs(true);
       try {
-        const [studRes, yearRes, classeRes, secRes, optRes] = await Promise.all(
-          [
-            Student?.getAll
-              ? Student.getAll({ page: 1, limit: 1000, search: "" })
-              : Promise.resolve({ data: [] }),
-            YearApi?.find ? YearApi.find() : Promise.resolve({ data: [] }),
-            ClasseApi?.find ? ClasseApi.find() : Promise.resolve({ data: [] }),
-            SectionApi?.find
-              ? SectionApi.find()
-              : Promise.resolve({ data: [] }),
-            OptionApi?.find ? OptionApi.find() : Promise.resolve({ data: [] }),
-          ],
-        );
+        const [studRes, yearRes, classeRes, secRes] = await Promise.all([
+          Student?.getAll
+            ? Student.getAll({ page: 1, limit: 1000, search: "" })
+            : Promise.resolve({ data: [] }),
+          YearApi?.find ? YearApi.find() : Promise.resolve({ data: [] }),
+          ClasseApi?.find ? ClasseApi.find() : Promise.resolve({ data: [] }),
+          SectionApi?.find ? SectionApi.find() : Promise.resolve({ data: [] }),
+        ]);
         if (cancelled) return;
         setStudents(studRes?.data ?? (Array.isArray(studRes) ? studRes : []));
         setYears(yearRes?.data ?? (Array.isArray(yearRes) ? yearRes : []));
@@ -471,7 +479,6 @@ function InscriptionFormModal({
           classeRes?.data ?? (Array.isArray(classeRes) ? classeRes : []),
         );
         setSections(secRes?.data ?? (Array.isArray(secRes) ? secRes : []));
-        setOptions(optRes?.data ?? (Array.isArray(optRes) ? optRes : []));
       } catch (e) {
         console.error("Erreur chargement référentiels:", e);
       } finally {
@@ -488,9 +495,13 @@ function InscriptionFormModal({
   useEffect(() => {
     if (!opened) return;
     if (editing) {
-      setStudentId(editing.sutudent || editing.studentData?._id || null);
-      setYearId(editing.year || editing.yearData?._id || null);
-      setClasseId(editing.classeId || editing.classeData?._id || null);
+      setStudentId(
+        cleanId(editing.sutudent || docId(editing.studentData)) || null,
+      );
+      setYearId(cleanId(editing.year || docId(editing.yearData)) || null);
+      setClasseId(
+        cleanId(editing.classeId || docId(editing.classeData)) || null,
+      );
       setDateInscription(
         editing.dateInscription
           ? new Date(editing.dateInscription)
@@ -517,52 +528,32 @@ function InscriptionFormModal({
     setError(null);
   }, [opened, editing]);
 
-  // Classe sélectionnée + section/option déduites
+  // Section déduite de la classe sélectionnée
   const selectedClasse = useMemo(
-    () =>
-      classes.find((c) => {
-        const id =
-          c.id ?? (c as any)._id?.toString?.() ?? String((c as any)._id);
-        return id === classeId;
-      }) ?? null,
+    () => classes.find((c) => docId(c) === classeId) ?? null,
     [classes, classeId],
   );
 
   const deducedSectionId = useMemo(() => {
-    const raw = selectedClasse?.sections;
-    if (!raw) return null;
-    return typeof raw === "string" ? raw : String(raw);
+    return cleanId(selectedClasse?.sections) || null;
   }, [selectedClasse]);
 
   const deducedSection = useMemo(() => {
     if (!deducedSectionId) return selectedClasse?.sectionData ?? null;
     return (
-      sections.find((s) => {
-        const id =
-          s.id ?? (s as any)._id?.toString?.() ?? String((s as any)._id);
-        return id === deducedSectionId;
-      }) ??
+      sections.find((s) => docId(s) === deducedSectionId) ??
       selectedClasse?.sectionData ??
       null
     );
   }, [deducedSectionId, sections, selectedClasse]);
 
-  const deducedOption = useMemo(() => {
-    const rawOptionId = selectedClasse?.option;
-    if (!rawOptionId) return selectedClasse?.optionData ?? null;
-    return (
-      options.find((o) => {
-        const id =
-          o.id ?? (o as any)._id?.toString?.() ?? String((o as any)._id);
-        return id === String(rawOptionId);
-      }) ??
-      selectedClasse?.optionData ??
-      null
-    );
-  }, [selectedClasse, options]);
-
   const handleSave = async () => {
-    if (!studentId || !yearId || !classeId) {
+    // ⚠️ On nettoie les ids avant envoi pour éviter les guillemets / préfixes BSON
+    const cleanStudentId = cleanId(studentId);
+    const cleanYearId = cleanId(yearId);
+    const cleanClasseId = cleanId(classeId);
+
+    if (!cleanStudentId || !cleanYearId || !cleanClasseId) {
       setError("Étudiant, classe et année sont obligatoires.");
       return;
     }
@@ -572,9 +563,9 @@ function InscriptionFormModal({
     try {
       // ⚠️ On n'envoie PAS `section` : le back la déduit de la classe.
       const payload = {
-        sutudent: studentId,
-        year: yearId,
-        classeId,
+        sutudent: cleanStudentId,
+        year: cleanYearId,
+        classeId: cleanClasseId,
         dateInscription: dateInscription ?? new Date(),
         status,
         isNew,
@@ -586,7 +577,7 @@ function InscriptionFormModal({
 
       const result = editing
         ? await InscriptionApi.update({
-            id: editing.id || editing._id || "",
+            id: docId(editing),
             data: payload,
           })
         : await InscriptionApi.create(payload);
@@ -595,7 +586,15 @@ function InscriptionFormModal({
         setError(result.message || "Erreur lors de l'enregistrement.");
         return;
       }
-      onSaved();
+
+      // ✅ En création uniquement → on transmet les params au parent
+      //    pour qu'il redirige vers la page paiement.
+      if (!editing) {
+        const fraisType = isNew ? "INSCRIPTION" : "REINSCRIPTION";
+        onSaved({ studentId: cleanStudentId, type: fraisType });
+      } else {
+        onSaved();
+      }
       onClose();
     } catch (e) {
       console.error(e);
@@ -605,51 +604,53 @@ function InscriptionFormModal({
     }
   };
 
-  // Options selects
+  // Options Selects
   const studentOptions = useMemo(
     () =>
-      students.map((s) => {
-        const id =
-          s.id ?? (s as any)._id?.toString?.() ?? String((s as any)._id);
-        return {
-          value: id,
-          label: studentFullName(s),
-          leftSection: s.picture ? (
-            <Avatar src={s.picture} size={22} radius="xl" />
-          ) : (
-            <div className="h-[22px] w-[22px] rounded-full flex items-center justify-center bg-muted text-muted-foreground font-semibold text-[10px]">
-              {studentInitials(s)}
-            </div>
-          ),
-        };
-      }),
+      students
+        .map((s) => {
+          const id = docId(s);
+          return {
+            value: id,
+            label: studentFullName(s),
+            leftSection: s.picture ? (
+              <Avatar src={s.picture} size={22} radius="xl" />
+            ) : (
+              <div className="h-[22px] w-[22px] rounded-full flex items-center justify-center bg-muted text-muted-foreground font-semibold text-[10px]">
+                {studentInitials(s)}
+              </div>
+            ),
+          };
+        })
+        .filter((o) => o.value), // exclut les ids vides
     [students],
   );
 
   const yearOptions = useMemo(
     () =>
-      years.map((y) => {
-        const id =
-          y.id ?? (y as any)._id?.toString?.() ?? String((y as any)._id);
-        return { value: id, label: y.libelle ?? "—" };
-      }),
+      years
+        .map((y) => {
+          const id = docId(y);
+          return { value: id, label: y.libelle ?? "—" };
+        })
+        .filter((o) => o.value),
     [years],
   );
 
-  // Classe affiche "Nom — Section (Option)" pour aider visuellement
   const classeOptions = useMemo(
     () =>
-      classes.map((c) => {
-        const id =
-          c.id ?? (c as any)._id?.toString?.() ?? String((c as any)._id);
-        const sectionName = c.sectionData?.name ?? "";
-        const optName = c.optionData?.name ?? "";
-        const suffix = [sectionName, optName].filter(Boolean).join(" · ");
-        return {
-          value: id,
-          label: suffix ? `${c.name ?? "—"} — ${suffix}` : (c.name ?? "—"),
-        };
-      }),
+      classes
+        .map((c) => {
+          const id = docId(c);
+          const sectionName = c.sectionData?.name ?? "";
+          return {
+            value: id,
+            label: sectionName
+              ? `${c.name ?? "—"} — ${sectionName}`
+              : (c.name ?? "—"),
+          };
+        })
+        .filter((o) => o.value),
     [classes],
   );
 
@@ -666,7 +667,6 @@ function InscriptionFormModal({
       withCloseButton={!saving}
     >
       <div className="space-y-4 px-5">
-        {/* Étudiant */}
         <Select
           label="Étudiant"
           placeholder={loadingRefs ? "Chargement…" : "Rechercher un étudiant…"}
@@ -680,7 +680,6 @@ function InscriptionFormModal({
           maxDropdownHeight={280}
         />
 
-        {/* Année */}
         <Select
           label="Année scolaire"
           placeholder={loadingRefs ? "Chargement…" : "Choisir une année…"}
@@ -693,7 +692,6 @@ function InscriptionFormModal({
           nothingFoundMessage="Aucune année"
         />
 
-        {/* Classe : c'est ici que tout est déterminé (section + option) */}
         <Select
           label="Classe"
           placeholder={loadingRefs ? "Chargement…" : "Choisir une classe…"}
@@ -707,7 +705,6 @@ function InscriptionFormModal({
           maxDropdownHeight={280}
         />
 
-        {/* Bloc info : section et option déduites automatiquement */}
         {selectedClasse && (
           <div className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-[11.5px] text-muted-foreground">
             <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
@@ -715,10 +712,6 @@ function InscriptionFormModal({
               <p>
                 <span className="text-foreground font-medium">Section :</span>{" "}
                 {deducedSection?.name ?? "—"}
-              </p>
-              <p>
-                <span className="text-foreground font-medium">Option :</span>{" "}
-                {deducedOption?.name ?? "—"}
               </p>
               <p className="text-[10.5px] italic">
                 Déduite automatiquement de la classe — non modifiable ici.
@@ -736,7 +729,6 @@ function InscriptionFormModal({
           disabled={saving}
         />
 
-        {/* N° d'ordre : plus de champ — généré automatiquement côté back */}
         {editing && (
           <div className="rounded-lg bg-muted px-3 py-2 text-[11.5px] text-muted-foreground">
             <span className="text-foreground font-medium">N° d'ordre :</span>{" "}
@@ -759,7 +751,6 @@ function InscriptionFormModal({
           allowDeselect={false}
         />
 
-        {/* Switch primary */}
         <Switch
           label="Nouvelle inscription"
           checked={isNew}
@@ -768,7 +759,6 @@ function InscriptionFormModal({
           color="primary"
         />
 
-        {/* École précédente */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <TextInput
             label="École précédente"
@@ -811,9 +801,7 @@ function InscriptionFormModal({
           >
             Annuler
           </Button>
-          {/* 🟢 Primary uniquement sur l'action */}
           <Button
-            //color="primary"
             className="bg-primary/90 hover:bg-primary "
             size="xs"
             onClick={handleSave}
@@ -838,6 +826,7 @@ function InscriptionFormModal({
 // Contenu table + filtre année
 // ---------------------------------------------------------------------------
 function InscriptionTableContent() {
+  const navigate = useNavigate();
   const { inscription: InscriptionApi, year: YearApi } = useConnecter();
 
   const [loading, setLoading] = useState(false);
@@ -864,7 +853,7 @@ function InscriptionTableContent() {
   const [formOpened, formCtl] = useDisclosure(false);
   const [editing, setEditing] = useState<Inscription | null>(null);
 
-  // Charge la liste des années (pour le Select de filtre)
+  // Charge la liste des années
   useEffect(() => {
     (async () => {
       try {
@@ -878,7 +867,7 @@ function InscriptionTableContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Détermine l'année courante au premier chargement + charge ses inscriptions
+  // Année courante + ses inscriptions
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -886,13 +875,13 @@ function InscriptionTableContent() {
         const res = await InscriptionApi.findCurrentYearInscriptions();
         const arr = res?.data ?? (Array.isArray(res) ? res : []);
         const currentYear = res?.year ?? null;
-        const cid = currentYear ? String(currentYear._id) : null;
+        const cid = currentYear ? cleanId(currentYear._id) : null;
         setCurrentYearId(cid);
         setSelectedYearId(cid);
 
         const normalized = arr.map((i: any) => ({
           ...i,
-          id: i.id ?? i._id?.toString?.() ?? String(i._id),
+          id: cleanId(i.id ?? i._id),
           isNew: Boolean(i.isNew),
           dateInscription: i.dateInscription
             ? new Date(i.dateInscription)
@@ -913,7 +902,6 @@ function InscriptionTableContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Recharge quand on change le filtre année
   const fetchByYear = useCallback(
     async (yearId: string | null) => {
       setLoading(true);
@@ -928,7 +916,7 @@ function InscriptionTableContent() {
         }
         const normalized = arr.map((i: any) => ({
           ...i,
-          id: i.id ?? i._id?.toString?.() ?? String(i._id),
+          id: cleanId(i.id ?? i._id),
           isNew: Boolean(i.isNew),
           dateInscription: i.dateInscription
             ? new Date(i.dateInscription)
@@ -949,12 +937,6 @@ function InscriptionTableContent() {
     [InscriptionApi],
   );
 
-  useEffect(() => {
-    if (selectedYearId === null) return; // évite de recharger avant init
-    // skip le premier passage (déjà géré par findCurrentYearInscriptions)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const handleYearChange = useCallback(
     (v: string | null) => {
       setSelectedYearId(v);
@@ -968,7 +950,7 @@ function InscriptionTableContent() {
     return fetchByYear(selectedYearId);
   }, [fetchByYear, selectedYearId]);
 
-  // Filtres/tri/recherche (client-side)
+  // Filtres/tri/recherche
   const filteredAndSorted = useMemo(() => {
     let arr = [...inscriptions];
     if (search.trim()) {
@@ -978,9 +960,6 @@ function InscriptionTableContent() {
           studentFullName(i.studentData).toLowerCase().includes(q) ||
           (i.sectionData?.name ?? "").toLowerCase().includes(q) ||
           (i.classeData?.name ?? "").toLowerCase().includes(q) ||
-          (i.optionData?.name ?? i.classeData?.optionData?.name ?? "")
-            .toLowerCase()
-            .includes(q) ||
           (i.yearData?.libelle ?? "").toLowerCase().includes(q) ||
           (i.numeroOrdre ?? "").toLowerCase().includes(q),
       );
@@ -1050,10 +1029,29 @@ function InscriptionTableContent() {
     [formCtl],
   );
 
+  // ✅ Redirection vers la page paiement si on vient d'une création
+  const handleSaved = useCallback(
+    async (created?: { studentId: string; type: string }) => {
+      // Recharge la liste dans tous les cas
+      await fetchInscriptions();
+
+      // Création → redirection vers le paiement
+      if (created?.studentId && created?.type) {
+        navigate("/fin/frais", {
+          state: {
+            studentId: cleanId(created.studentId),
+            type: created.type,
+          },
+        });
+      }
+    },
+    [fetchInscriptions, navigate],
+  );
+
   const handleToggleIsNew = useCallback(
     async (i: Inscription) => {
       try {
-        await InscriptionApi.toggleIsNew({ id: i.id });
+        await InscriptionApi.toggleIsNew({ id: docId(i) });
         await fetchInscriptions();
       } catch (e) {
         console.error(e);
@@ -1079,7 +1077,7 @@ function InscriptionTableContent() {
     setDeleting(true);
     setDeleteError(null);
     try {
-      const result = await InscriptionApi.delete({ id: toDelete.id });
+      const result = await InscriptionApi.delete({ id: docId(toDelete) });
       if (result?.success) {
         setDeleteOpened(false);
         setToDelete(null);
@@ -1126,21 +1124,21 @@ function InscriptionTableContent() {
 
   const yearOptions = useMemo(
     () =>
-      years.map((y) => {
-        const id =
-          y.id ?? (y as any)._id?.toString?.() ?? String((y as any)._id);
-        const isCurrent = id === currentYearId;
-        return {
-          value: id,
-          label: `${y.libelle ?? "—"}${isCurrent ? " (année en cours)" : ""}`,
-        };
-      }),
+      years
+        .map((y) => {
+          const id = docId(y);
+          const isCurrent = id === currentYearId;
+          return {
+            value: id,
+            label: `${y.libelle ?? "—"}${isCurrent ? " (année en cours)" : ""}`,
+          };
+        })
+        .filter((o) => o.value),
     [years, currentYearId],
   );
 
   return (
     <>
-      {/* Barre d'actions + filtre année */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-64">
@@ -1157,7 +1155,6 @@ function InscriptionTableContent() {
           </div>
         </div>
 
-        {/* 🟢 Bouton primary */}
         <button
           type="button"
           onClick={handleCreate}
@@ -1176,13 +1173,11 @@ function InscriptionTableContent() {
         icon={ClipboardList}
         subtitleLabel="inscription"
         loading={loading}
-        searchPlaceholder="Rechercher étudiant, section, classe, option, année…"
+        searchPlaceholder="Rechercher étudiant, section, classe, année…"
         searchFields={(r) =>
           `${studentFullName(r.studentData)} ${r.sectionData?.name ?? ""} ${
             r.classeData?.name ?? ""
-          } ${r.optionData?.name ?? r.classeData?.optionData?.name ?? ""} ${
-            r.yearData?.libelle ?? ""
-          } ${r.numeroOrdre ?? ""}`
+          } ${r.yearData?.libelle ?? ""} ${r.numeroOrdre ?? ""}`
         }
         filters={filters}
         defaultSortKey="dateInscription"
@@ -1251,7 +1246,6 @@ function InscriptionTableContent() {
             >
               Annuler
             </Button>
-            {/* 🟢 Primary uniquement sur l'action */}
             <Button
               color="primary"
               size="xs"
@@ -1272,7 +1266,7 @@ function InscriptionTableContent() {
       <InscriptionFormModal
         opened={formOpened}
         onClose={formCtl.close}
-        onSaved={fetchInscriptions}
+        onSaved={handleSaved}
         editing={editing}
       />
     </>

@@ -1,0 +1,73 @@
+/* src/styles/cvPrint.css
+ * Import une seule fois (ex: dans main.tsx ou dans TeacherDetailPage.tsx) :
+ *   import "@/styles/cvPrint.css";
+ */
+
+/* Le CV est toujours rendu sur une largeur A4 fixe pour l'impression/PDF */
+.cv-print-root {
+  width: 210mm;
+  max-width: 100%;
+  margin: 0 auto;
+  background: #fff;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+  color-adjust: exact !important;
+}
+
+.cv-print-root * {
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}
+
+/* Blocs insécables : une expérience, une formation, une carte... */
+.cv-print-root [data-cv-block],
+.cv-print-root .cv-block {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* Titres jamais orphelins en bas de page */
+.cv-print-root h1,
+.cv-print-root h2,
+.cv-print-root h3 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+/* Ce qui ne doit pas apparaître sur le papier (boutons, sélecteurs...) */
+@media print {
+  .cv-no-print,
+  [data-cv-no-print] {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .cv-print-root {
+    width: 210mm !important;
+    max-width: none !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* Le sidebar occupe toute la hauteur de la page (même sur la page 2) */
+  .cv-print-root [data-cv-sidebar] {
+    min-height: 297mm;
+  }
+
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+}
+
+@page {
+  size: A4 portrait;
+  margin: 0;
+}

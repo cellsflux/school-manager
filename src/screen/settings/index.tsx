@@ -16,6 +16,7 @@ import {
   Shield,
   Smartphone,
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 interface SettingItem {
   id: string;
@@ -25,6 +26,7 @@ interface SettingItem {
   icon: React.ElementType;
   iconBg: string;
   danger?: boolean;
+  action?: () => void;
 }
 
 const ITEMS: SettingItem[] = [
@@ -126,19 +128,25 @@ const ITEMS: SettingItem[] = [
   },
 ];
 
-const LOGOUT: SettingItem = {
-  id: "logout",
-  path: "/logout",
-  label: "Se déconnecter",
-  description: "Quitter votre session",
-  icon: LogOut,
-  iconBg: "from-red-500 to-red-600",
-  danger: true,
-};
-
 export default function SettingsGrid() {
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
+
+  const { logout, user } = useAuth();
+
+  const LOGOUT: SettingItem = {
+    id: "logout",
+    path: "/logout",
+    label: "Se déconnecter",
+    description: "Quitter votre session",
+    icon: LogOut,
+    iconBg: "from-red-500 to-red-600",
+    danger: true,
+    action: async () => {
+      await localStorage.removeItem("__id_");
+      await logout();
+    },
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -227,7 +235,7 @@ export default function SettingsGrid() {
           {/* Déconnexion */}
           {showLogout && (
             <button
-              onClick={() => navigate(LOGOUT.path)}
+              onClick={LOGOUT.action}
               className="group flex items-center gap-4 p-4 rounded-2xl bg-white dark:bg-white/[0.04] border border-black/[0.06] dark:border-white/[0.06] text-left transition-all duration-200 hover:bg-red-50 dark:hover:bg-red-500/[0.08] hover:border-red-200 dark:hover:border-red-500/20"
             >
               <span className="flex items-center justify-center w-11 h-11 rounded-xl shrink-0 bg-gradient-to-br from-red-500 to-red-600 shadow-sm">

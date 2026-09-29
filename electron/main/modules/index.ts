@@ -6,9 +6,13 @@ import { EtsModule } from "./etablissement.module";
 import { yearModule } from "./year.module";
 import { sectionModule } from "./section.module";
 import { inscriptionModule } from "./inscription.module";
-import { optionModule } from "./option.module";
+
 import { classeModule } from "./classe.module";
 import { fraisModule } from "./frais.module";
+import { printModule } from "./print.module";
+import { TeacherModule } from "./teacher.module";
+import { coursModule } from "./cours.module";
+import { coursClassModule } from "./coursClass.module";
 
 export const modules = {
   user: userModule,
@@ -19,9 +23,12 @@ export const modules = {
   year: yearModule,
   section: sectionModule,
   inscription: inscriptionModule,
-  option: optionModule,
   classe: classeModule,
   frais: fraisModule,
+  print: printModule,
+  Teacher: TeacherModule,
+  cours: coursModule,
+  coursClass: coursClassModule,
 };
 
 export type Modules = typeof modules;

@@ -85,8 +85,6 @@ export function Sidebar({
   mobileOpened,
   onMobileToggle,
 }: SidebarProps) {
-  const { logout, user } = useAuth();
-
   // Résout "système" (auto) vers la vraie valeur courante (clair/sombre),
   // au lieu de rester coincé sur "light" par défaut comme le fait
   // useMantineColorScheme() quand colorScheme === "auto".
@@ -557,37 +555,6 @@ export function Sidebar({
           />
         )*/}
       </Box>
-
-      {/* Pied de la sidebar */}
-      <Stack gap={2} style={{ marginTop: "auto" }}>
-        <Divider style={{ margin: "4px 0" }} />
-
-        <Tooltip label="Déconnexion" position="right" disabled={opened}>
-          <Button
-            variant="subtle"
-            color="red"
-            leftSection={<LogOutIcon size={20} />}
-            justify={opened ? "flex-start" : "center"}
-            fullWidth
-            onClick={async () => {
-              await localStorage.removeItem("__id_");
-              await logout();
-            }}
-            style={{
-              padding: opened ? "8px 12px" : "6px 4px",
-              border: "none",
-              height: "auto",
-              minHeight: "40px",
-            }}
-          >
-            {opened && (
-              <Text size="md" fw={500}>
-                Déconnexion
-              </Text>
-            )}
-          </Button>
-        </Tooltip>
-      </Stack>
     </Box>
   );
 }

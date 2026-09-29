@@ -10,6 +10,9 @@ import { ormSchema } from "realm-mongoose-orm";
  * ⚠️ Un enregistrement n'est JAMAIS supprimé physiquement en production :
  * on le passe à `statut: "ANNULE"` ou `"REMBOURSE"` pour garder la trace
  * comptable. Le soft-delete est géré côté backend.
+ *
+ * ⚠️ NOTE : le champ `description` a été retiré — utilisez `motif` et
+ * `observation` pour tout commentaire.
  */
 const FraisSchema = ormSchema(
   {
@@ -23,7 +26,6 @@ const FraisSchema = ormSchema(
      * pouvoir ajouter des catégories sans migration.
      */
     type: { type: String, required: true },
-    description: { type: String, required: false, default: "" },
 
     // -----------------------------------------------------------------------
     // Montant

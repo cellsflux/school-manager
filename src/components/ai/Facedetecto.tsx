@@ -411,7 +411,7 @@ function UserInfoPanelPortal({
   const content = (
     <div
       ref={panelRef}
-      className="fixed z-[2147483647]"
+      className="fixed z-99999999999999"
       style={{
         left: pos?.left ?? 0,
         top: pos?.top ?? 0,

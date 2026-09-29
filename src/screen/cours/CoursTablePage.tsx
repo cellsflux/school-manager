@@ -1,7 +1,7 @@
-// OptionTablePage.tsx
+// src/pages/CoursTablePage.tsx
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
-  Tag,
+  BookOpen,
   Eye,
   Pencil,
   Trash2,
@@ -9,7 +9,7 @@ import {
   Loader2,
   X,
   Plus,
-  Layers,
+  ImageIcon,
 } from "lucide-react";
 import {
   DataTable,
@@ -25,33 +25,26 @@ import {
   Text,
   Modal,
   TextInput,
+  Textarea,
   Select,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { useConnecter } from "@/hooks/useConnecter";
 
 // ---------------------------------------------------------------------------
-// 1. Type métier
+// 1. Types
 // ---------------------------------------------------------------------------
-type SectionLite = {
+type Cours = {
+  _id: string;
   id?: string;
-  _id?: string;
-  name?: string;
-  slug?: string;
-  logo?: string;
-};
-
-type Option = {
-  id: string;
-  _id?: string;
   name: string;
-  slug: string;
-  section_id: string;
+  shortname?: string;
+  coverImage?: string;
+  description?: string;
+  category?: string;
+  status?: string;
   createdAt?: Date | string;
   updatedAt?: Date | string;
-
-  // Résolu côté back
-  sectionData?: SectionLite | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -68,56 +61,82 @@ function formatDate(dateInput: Date | string | null | undefined): string {
   });
 }
 
-function SectionBadge({ section }: { section?: SectionLite | null }) {
-  if (!section) {
-    return <span className="text-muted-foreground">—</span>;
-  }
-  return (
-    <div className="flex items-center gap-2">
-      {section.logo ? (
-        <img
-          src={section.logo}
-          alt={section.name ?? ""}
-          className="h-6 w-6 rounded-full object-cover border border-border"
-        />
-      ) : (
-        <div className="h-6 w-6 rounded-full flex items-center justify-center bg-muted text-muted-foreground">
-          <Layers className="h-3 w-3" />
-        </div>
-      )}
-      <span className="text-foreground">{section.name ?? "—"}</span>
-    </div>
-  );
+const STATUS_OPTIONS = [
+  { value: "active", label: "Actif" },
+  { value: "inactive", label: "Inactif" },
+  { value: "archived", label: "Archivé" },
+];
+
+function statusLabel(s?: string): string {
+  return STATUS_OPTIONS.find((o) => o.value === s)?.label ?? s ?? "—";
 }
 
 // ---------------------------------------------------------------------------
 // 3. Colonnes
 // ---------------------------------------------------------------------------
-const columns: ColumnDef<Option>[] = [
+const columns: ColumnDef<Cours>[] = [
+  {
+    key: "coverImage",
+    header: "",
+    sortable: false,
+    cell: (r) =>
+      r.coverImage ? (
+        <img
+          src={r.coverImage}
+          alt={r.name}
+          className="h-9 w-9 rounded-lg object-cover border border-border"
+        />
+      ) : (
+        <div className="h-9 w-9 rounded-lg flex items-center justify-center bg-muted text-muted-foreground">
+          <BookOpen className="h-4 w-4" />
+        </div>
+      ),
+  },
   {
     key: "name",
-    header: "Nom",
+    header: "Cours",
     sortable: true,
     getValue: (r) => r.name,
     cell: (r) => (
       <div className="flex flex-col">
         <span className="font-medium text-foreground">{r.name}</span>
-        <span className="font-mono text-[10.5px] text-muted-foreground">
-          {r.slug}
-        </span>
+        {r.shortname && (
+          <span className="text-[11px] text-muted-foreground">
+            {r.shortname}
+          </span>
+        )}
       </div>
     ),
   },
   {
-    key: "section",
-    header: "Section",
+    key: "category",
+    header: "Catégorie",
     sortable: true,
-    getValue: (r) => r.sectionData?.name ?? "",
-    cell: (r) => <SectionBadge section={r.sectionData} />,
+    getValue: (r) => r.category ?? "",
+    cell: (r) => <span className="text-foreground">{r.category ?? "—"}</span>,
+  },
+  {
+    key: "status",
+    header: "Statut",
+    sortable: true,
+    getValue: (r) => r.status ?? "",
+    cell: (r) => (
+      <span
+        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-medium ${
+          r.status === "active"
+            ? "bg-emerald-100 text-emerald-700"
+            : r.status === "archived"
+              ? "bg-gray-100 text-gray-500"
+              : "bg-muted text-foreground"
+        }`}
+      >
+        {statusLabel(r.status)}
+      </span>
+    ),
   },
   {
     key: "createdAt",
-    header: "Créée le",
+    header: "Créé le",
     sortable: true,
     defaultVisible: false,
     getValue: (r) => r.createdAt?.toString(),
@@ -128,25 +147,30 @@ const columns: ColumnDef<Option>[] = [
 // ---------------------------------------------------------------------------
 // 4. Filtres
 // ---------------------------------------------------------------------------
-const filters: FilterDef<Option>[] = [
+const filters: FilterDef<Cours>[] = [
   {
-    key: "section",
-    label: "Section",
-    getValue: (r) => r.sectionData?.name ?? "",
+    key: "category",
+    label: "Catégorie",
+    getValue: (r) => r.category ?? "",
+  },
+  {
+    key: "status",
+    label: "Statut",
+    getValue: (r) => statusLabel(r.status),
   },
 ];
 
 // ---------------------------------------------------------------------------
 // 5. Modal "Voir"
 // ---------------------------------------------------------------------------
-function OptionDetailsModal({
-  option,
+function CoursDetailsModal({
+  cours,
   onClose,
 }: {
-  option: Option | null;
+  cours: Cours | null;
   onClose: () => void;
 }) {
-  if (!option) return null;
+  if (!cours) return null;
   return (
     <div
       className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
@@ -158,16 +182,26 @@ function OptionDetailsModal({
       >
         <div className="mb-4 flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full flex items-center justify-center bg-muted text-muted-foreground">
-              <Tag className="h-4 w-4" />
-            </div>
+            {cours.coverImage ? (
+              <img
+                src={cours.coverImage}
+                alt={cours.name}
+                className="h-12 w-12 rounded-lg object-cover border border-border"
+              />
+            ) : (
+              <div className="h-12 w-12 rounded-lg flex items-center justify-center bg-muted text-muted-foreground">
+                <BookOpen className="h-5 w-5" />
+              </div>
+            )}
             <div>
               <h3 className="text-sm font-semibold text-foreground">
-                {option.name}
+                {cours.name}
               </h3>
-              <p className="font-mono text-[11px] text-muted-foreground">
-                {option.slug}
-              </p>
+              {cours.shortname && (
+                <p className="text-[11px] text-muted-foreground">
+                  {cours.shortname}
+                </p>
+              )}
             </div>
           </div>
           <button
@@ -180,13 +214,23 @@ function OptionDetailsModal({
         </div>
 
         <div className="space-y-2.5 text-[12.5px] text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <span className="text-foreground font-medium">Section :</span>
-            <SectionBadge section={option.sectionData} />
-          </div>
           <p>
-            <span className="text-foreground font-medium">Créée le :</span>{" "}
-            {formatDate(option.createdAt)}
+            <span className="text-foreground font-medium">Catégorie :</span>{" "}
+            {cours.category ?? "—"}
+          </p>
+          <p>
+            <span className="text-foreground font-medium">Statut :</span>{" "}
+            {statusLabel(cours.status)}
+          </p>
+          {cours.description && (
+            <p>
+              <span className="text-foreground font-medium">Description :</span>{" "}
+              {cours.description}
+            </p>
+          )}
+          <p>
+            <span className="text-foreground font-medium">Créé le :</span>{" "}
+            {formatDate(cours.createdAt)}
           </p>
         </div>
 
@@ -207,7 +251,7 @@ function OptionDetailsModal({
 // ---------------------------------------------------------------------------
 // 6. Modal formulaire
 // ---------------------------------------------------------------------------
-function OptionFormModal({
+function CoursFormModal({
   opened,
   onClose,
   onSaved,
@@ -216,86 +260,66 @@ function OptionFormModal({
   opened: boolean;
   onClose: () => void;
   onSaved: () => void;
-  editing: Option | null;
+  editing: Cours | null;
 }) {
-  const { option: OptionApi, section: SectionApi } = useConnecter();
-
-  const [sections, setSections] = useState<SectionLite[]>([]);
-  const [loadingRefs, setLoadingRefs] = useState(false);
+  const { cours: CoursApi } = useConnecter();
 
   const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [sectionId, setSectionId] = useState<string | null>(null);
+  const [shortname, setShortname] = useState("");
+  const [coverImage, setCoverImage] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("");
+  const [status, setStatus] = useState<string | null>("active");
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // -------------------- Charger les sections --------------------
-  useEffect(() => {
-    if (!opened) return;
-    let cancelled = false;
-
-    const load = async () => {
-      setLoadingRefs(true);
-      try {
-        const res = SectionApi?.find ? await SectionApi.find() : { data: [] };
-        if (cancelled) return;
-        setSections(res?.data ?? (Array.isArray(res) ? res : []));
-      } catch (e) {
-        console.error("Erreur chargement sections:", e);
-      } finally {
-        if (!cancelled) setLoadingRefs(false);
-      }
-    };
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened]);
-
-  // -------------------- Pré-remplir en édition --------------------
   useEffect(() => {
     if (!opened) return;
     if (editing) {
       setName(editing.name || "");
-      setSlug(editing.slug || "");
-      setSectionId(editing.section_id || editing.sectionData?._id || null);
+      setShortname(editing.shortname || "");
+      setCoverImage(editing.coverImage || "");
+      setDescription(editing.description || "");
+      setCategory(editing.category || "");
+      setStatus(editing.status || "active");
     } else {
       setName("");
-      setSlug("");
-      setSectionId(null);
+      setShortname("");
+      setCoverImage("");
+      setDescription("");
+      setCategory("");
+      setStatus("active");
     }
     setError(null);
   }, [opened, editing]);
 
   const handleSave = async () => {
     if (!name.trim()) {
-      setError("Le nom est obligatoire.");
+      setError("Le nom du cours est obligatoire.");
       return;
     }
-    if (!sectionId) {
-      setError("La section est obligatoire.");
-      return;
-    }
+
     setSaving(true);
     setError(null);
     try {
-      const payload = {
+      const payload: any = {
         name: name.trim(),
-        slug: slug.trim() || undefined,
-        section_id: sectionId,
+        shortname: shortname.trim() || undefined,
+        coverImage: coverImage.trim() || undefined,
+        description: description.trim() || undefined,
+        category: category.trim() || undefined,
+        status: status || "active",
       };
 
       let result;
       if (editing) {
-        result = await OptionApi.update({
-          id: editing.id || editing._id || "",
+        result = await CoursApi.update({
+          id: editing._id,
           data: payload,
         });
       } else {
-        result = await OptionApi.create(payload);
+        result = await CoursApi.create(payload);
       }
 
       if (result?.success === false) {
@@ -312,47 +336,22 @@ function OptionFormModal({
     }
   };
 
-  // -------------------- Options Select --------------------
-  const sectionOptions = useMemo(
-    () =>
-      sections.map((s) => {
-        const id =
-          s.id ?? (s as any)._id?.toString?.() ?? String((s as any)._id);
-        return {
-          value: id,
-          label: s.name ?? "—",
-          leftSection: s.logo ? (
-            <img
-              src={s.logo}
-              alt={s.name ?? ""}
-              className="h-[22px] w-[22px] rounded-full object-cover"
-            />
-          ) : (
-            <div className="h-[22px] w-[22px] rounded-full flex items-center justify-center bg-muted text-muted-foreground font-semibold text-[10px]">
-              {(s.name ?? "?").charAt(0).toUpperCase()}
-            </div>
-          ),
-        };
-      }),
-    [sections],
-  );
-
   return (
     <Modal
       opened={opened}
       onClose={onClose}
-      title={editing ? "Modifier l'option" : "Nouvelle option"}
+      title={editing ? "Modifier le cours" : "Nouveau cours"}
       centered
       radius="md"
-      size="md"
+      size="lg"
       closeOnClickOutside={!saving}
       closeOnEscape={!saving}
       withCloseButton={!saving}
     >
       <div className="space-y-4">
         <TextInput
-          label="Nom"
-          placeholder="Ex: Scientifique"
+          label="Nom du cours"
+          placeholder="Ex: Mathématiques"
           value={name}
           onChange={(e) => setName(e.currentTarget.value)}
           required
@@ -360,25 +359,47 @@ function OptionFormModal({
         />
 
         <TextInput
-          label="Slug"
-          placeholder="laisser vide pour auto-générer"
-          value={slug}
-          onChange={(e) => setSlug(e.currentTarget.value)}
+          label="Nom court"
+          placeholder="Ex: Maths"
+          value={shortname}
+          onChange={(e) => setShortname(e.currentTarget.value)}
           disabled={saving}
-          description="Identifiant URL-safe. Généré automatiquement depuis le nom si vide."
+        />
+
+        <TextInput
+          label="Image de couverture (URL)"
+          placeholder="https://…"
+          value={coverImage}
+          onChange={(e) => setCoverImage(e.currentTarget.value)}
+          disabled={saving}
+          leftSection={<ImageIcon className="h-3.5 w-3.5" />}
+        />
+
+        <TextInput
+          label="Catégorie"
+          placeholder="Ex: Sciences"
+          value={category}
+          onChange={(e) => setCategory(e.currentTarget.value)}
+          disabled={saving}
         />
 
         <Select
-          label="Section"
-          placeholder={loadingRefs ? "Chargement…" : "Choisir une section…"}
-          data={sectionOptions}
-          value={sectionId}
-          onChange={setSectionId}
-          searchable
-          required
-          disabled={saving || loadingRefs}
-          nothingFoundMessage="Aucune section"
-          maxDropdownHeight={280}
+          label="Statut"
+          data={STATUS_OPTIONS}
+          value={status}
+          onChange={setStatus}
+          disabled={saving}
+        />
+
+        <Textarea
+          label="Description"
+          placeholder="Description du cours…"
+          value={description}
+          onChange={(e) => setDescription(e.currentTarget.value)}
+          disabled={saving}
+          autosize
+          minRows={2}
+          maxRows={5}
         />
 
         {error && (
@@ -396,9 +417,8 @@ function OptionFormModal({
           >
             Annuler
           </Button>
-          {/* 🟢 Bouton d'action → primary */}
           <Button
-            color="primary"
+            className="bg-primary/80 hover:bg-primary"
             size="xs"
             onClick={handleSave}
             disabled={saving}
@@ -417,11 +437,11 @@ function OptionFormModal({
 // ---------------------------------------------------------------------------
 // 7. Contenu de la table
 // ---------------------------------------------------------------------------
-function OptionTableContent() {
-  const { option: OptionApi } = useConnecter();
+function CoursTableContent() {
+  const { cours: CoursApi } = useConnecter();
 
   const [loading, setLoading] = useState(false);
-  const [options, setOptions] = useState<Option[]>([]);
+  const [coursList, setCoursList] = useState<Cours[]>([]);
   const [totalItems, setTotalItems] = useState(0);
 
   const [page, setPage] = useState(1);
@@ -431,71 +451,72 @@ function OptionTableContent() {
   const [sortKey, setSortKey] = useState<string>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
-  const [viewed, setViewed] = useState<Option | null>(null);
+  const [viewed, setViewed] = useState<Cours | null>(null);
 
   const [deleteOpened, setDeleteOpened] = useState(false);
-  const [toDelete, setToDelete] = useState<Option | null>(null);
+  const [toDelete, setToDelete] = useState<Cours | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [formOpened, formCtl] = useDisclosure(false);
-  const [editing, setEditing] = useState<Option | null>(null);
+  const [editing, setEditing] = useState<Cours | null>(null);
 
   // -------------------- Chargement --------------------
-  const fetchOptions = useCallback(async () => {
+  const fetchCours = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await OptionApi.find();
+      const result = await CoursApi.find();
       const list: any[] = Array.isArray(result) ? result : (result?.data ?? []);
 
-      const normalized: Option[] = list.map((o) => ({
-        ...o,
-        id: o.id ?? o._id?.toString?.() ?? String(o._id),
-        createdAt: o.createdAt
-          ? o.createdAt instanceof Date
-            ? o.createdAt
-            : new Date(o.createdAt)
+      const normalized: Cours[] = list.map((c) => ({
+        ...c,
+        id: c._id?.toString?.() ?? String(c._id),
+        createdAt: c.createdAt
+          ? c.createdAt instanceof Date
+            ? c.createdAt
+            : new Date(c.createdAt)
           : undefined,
-        updatedAt: o.updatedAt
-          ? o.updatedAt instanceof Date
-            ? o.updatedAt
-            : new Date(o.updatedAt)
+        updatedAt: c.updatedAt
+          ? c.updatedAt instanceof Date
+            ? c.updatedAt
+            : new Date(c.updatedAt)
           : undefined,
       }));
 
-      setOptions(normalized);
+      setCoursList(normalized);
       setTotalItems(normalized.length);
     } catch (e) {
-      console.error("Erreur lors du chargement des options:", e);
-      setOptions([]);
+      console.error("Erreur lors du chargement des cours:", e);
+      setCoursList([]);
       setTotalItems(0);
     } finally {
       setLoading(false);
     }
-  }, [OptionApi]);
+  }, [CoursApi]);
 
   useEffect(() => {
-    fetchOptions();
-  }, [fetchOptions]);
+    fetchCours();
+  }, [fetchCours]);
 
   // -------------------- Filtres / tri / recherche --------------------
   const filteredAndSorted = useMemo(() => {
-    let arr = [...options];
+    let arr = [...coursList];
 
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       arr = arr.filter(
-        (o) =>
-          o.name.toLowerCase().includes(q) ||
-          o.slug.toLowerCase().includes(q) ||
-          (o.sectionData?.name ?? "").toLowerCase().includes(q),
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          (c.shortname ?? "").toLowerCase().includes(q) ||
+          (c.category ?? "").toLowerCase().includes(q),
       );
     }
 
-    if (activeFilters.section) {
-      arr = arr.filter(
-        (o) => (o.sectionData?.name ?? "") === activeFilters.section,
-      );
+    if (activeFilters.category) {
+      arr = arr.filter((c) => (c.category ?? "") === activeFilters.category);
+    }
+    if (activeFilters.status) {
+      arr = arr.filter((c) => statusLabel(c.status) === activeFilters.status);
     }
 
     arr.sort((a, b) => {
@@ -507,12 +528,14 @@ function OptionTableContent() {
       const cmp =
         av instanceof Date && bv instanceof Date
           ? av.getTime() - bv.getTime()
-          : String(av).localeCompare(String(bv));
+          : typeof av === "number" && typeof bv === "number"
+            ? av - bv
+            : String(av).localeCompare(String(bv));
       return sortDir === "asc" ? cmp : -cmp;
     });
 
     return arr;
-  }, [options, search, activeFilters, sortKey, sortDir]);
+  }, [coursList, search, activeFilters, sortKey, sortDir]);
 
   const paginated = useMemo(() => {
     const start = (page - 1) * limit;
@@ -544,7 +567,7 @@ function OptionTableContent() {
   }, []);
 
   // -------------------- Actions --------------------
-  const handleView = useCallback((o: Option) => setViewed(o), []);
+  const handleView = useCallback((c: Cours) => setViewed(c), []);
 
   const handleCreate = useCallback(() => {
     setEditing(null);
@@ -552,15 +575,15 @@ function OptionTableContent() {
   }, [formCtl]);
 
   const handleEdit = useCallback(
-    (o: Option) => {
-      setEditing(o);
+    (c: Cours) => {
+      setEditing(c);
       formCtl.open();
     },
     [formCtl],
   );
 
-  const handleAskDelete = useCallback((o: Option) => {
-    setToDelete(o);
+  const handleAskDelete = useCallback((c: Cours) => {
+    setToDelete(c);
     setDeleteError(null);
     setDeleteOpened(true);
   }, []);
@@ -577,14 +600,16 @@ function OptionTableContent() {
     setDeleting(true);
     setDeleteError(null);
     try {
-      const result = await OptionApi.delete({ id: toDelete.id });
+      const result = await CoursApi.delete({
+        id: toDelete.id ?? toDelete._id,
+      });
       if (result?.success) {
         setDeleteOpened(false);
         setToDelete(null);
-        await fetchOptions();
+        await fetchCours();
       } else {
         setDeleteError(
-          result?.message || "Erreur lors de la suppression de l'option.",
+          result?.message || "Erreur lors de la suppression du cours.",
         );
       }
     } catch (e) {
@@ -593,10 +618,9 @@ function OptionTableContent() {
     } finally {
       setDeleting(false);
     }
-  }, [toDelete, OptionApi, fetchOptions]);
+  }, [toDelete, CoursApi, fetchCours]);
 
-  // ⚪ RowActions neutres
-  const rowActions: RowAction<Option>[] = useMemo(
+  const rowActions: RowAction<Cours>[] = useMemo(
     () => [
       { key: "view", label: "Voir", icon: Eye, onClick: handleView },
       { key: "edit", label: "Modifier", icon: Pencil, onClick: handleEdit },
@@ -622,14 +646,13 @@ function OptionTableContent() {
   return (
     <>
       <div className="mb-4 flex justify-end">
-        {/* 🟢 Bouton d'action principal → primary */}
         <button
           type="button"
           onClick={handleCreate}
           className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-[13px] font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" />
-          Nouvelle option
+          Nouveau cours
         </button>
       </div>
 
@@ -637,12 +660,14 @@ function OptionTableContent() {
         data={paginated}
         columns={columns}
         getRowId={(r) => r.id || r._id || ""}
-        title="Options"
-        icon={Tag}
-        subtitleLabel="option"
+        title="Cours"
+        icon={BookOpen}
+        subtitleLabel="cours"
         loading={loading}
-        searchPlaceholder="Rechercher une option…"
-        searchFields={(r) => `${r.name} ${r.slug} ${r.sectionData?.name ?? ""}`}
+        searchPlaceholder="Rechercher un cours…"
+        searchFields={(r) =>
+          `${r.name} ${r.shortname ?? ""} ${r.category ?? ""}`
+        }
         filters={filters}
         defaultSortKey="name"
         defaultSortDir="asc"
@@ -656,11 +681,10 @@ function OptionTableContent() {
         enableExport={false as any}
       />
 
-      <OptionDetailsModal option={viewed} onClose={() => setViewed(null)} />
+      <CoursDetailsModal cours={viewed} onClose={() => setViewed(null)} />
 
-      {/* Confirmation de suppression — Mantine Dialog */}
       <style>{`
-        .option-delete-dialog { transform: translate(-50%, -50%); }
+        .cours-delete-dialog { transform: translate(-50%, -50%); }
       `}</style>
       <Dialog
         opened={deleteOpened}
@@ -669,29 +693,24 @@ function OptionTableContent() {
         size="md"
         radius="md"
         position={{ top: "50%", left: "50%" }}
-        className="option-delete-dialog"
+        className="cours-delete-dialog"
         shadow="lg"
       >
         <div className="space-y-3">
           <div className="flex items-start gap-3">
-            {/* ⚪ Icône neutre */}
             <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted">
               <AlertTriangle className="h-4.5 w-4.5 text-muted-foreground" />
             </div>
             <div className="min-w-0">
               <Text size="sm" fw={600} className="!text-foreground">
-                Voulez-vous supprimer cette option ?
+                Voulez-vous supprimer ce cours ?
               </Text>
               {toDelete && (
                 <p className="mt-1 text-[12px] text-muted-foreground">
                   <span className="font-medium text-foreground">
                     {toDelete.name}
                   </span>{" "}
-                  ({toDelete.slug}) — Section{" "}
-                  <span className="font-medium text-foreground">
-                    {toDelete.sectionData?.name ?? "—"}
-                  </span>{" "}
-                  sera définitivement supprimée. Cette action est irréversible.
+                  sera définitivement supprimé. Cette action est irréversible.
                 </p>
               )}
             </div>
@@ -712,7 +731,6 @@ function OptionTableContent() {
             >
               Annuler
             </Button>
-            {/* 🟢 Bouton d'action → primary */}
             <Button
               color="primary"
               size="xs"
@@ -730,10 +748,10 @@ function OptionTableContent() {
         </div>
       </Dialog>
 
-      <OptionFormModal
+      <CoursFormModal
         opened={formOpened}
         onClose={formCtl.close}
-        onSaved={fetchOptions}
+        onSaved={fetchCours}
         editing={editing}
       />
     </>
@@ -743,6 +761,6 @@ function OptionTableContent() {
 // ---------------------------------------------------------------------------
 // 8. Page
 // ---------------------------------------------------------------------------
-export default function OptionTablePage() {
-  return <OptionTableContent />;
+export default function CoursTablePage() {
+  return <CoursTableContent />;
 }

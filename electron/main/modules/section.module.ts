@@ -103,19 +103,6 @@ export const sectionModule = {
         payload.slug = slugify(payload.name);
       }
 
-      // Vérifier l'unicité du slug si on le change
-      if (payload.slug) {
-        const existing = await sectionModel.findOne({
-          slug: payload.slug,
-        });
-        if (existing) {
-          return {
-            message: "Une section avec ce slug existe déjà",
-            success: false,
-          };
-        }
-      }
-
       const updated = await sectionModel.findByIdAndUpdate(
         id,
         { ...payload },

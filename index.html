@@ -23,6 +23,7 @@
       - images data/blob
       - fonts data
       - médias locaux et distants
+      - iframes (locales et distantes)
     -->
     <meta
       http-equiv="Content-Security-Policy"
@@ -66,6 +67,14 @@
           https:;
 
         media-src
+          'self'
+          http:
+          https:
+          file:
+          data:
+          blob:;
+
+        frame-src
           'self'
           http:
           https:

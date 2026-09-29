@@ -1,34 +1,28 @@
 // server/modules/inscription.module.ts
+
 import { InscriptionModel } from "../../databases/models/inscriptions";
-import { StudentModel } from "../../databases/models/sudent.model"; // adapte le nom
-import { AnneeModel } from "../../databases/models/annee.model"; // adapte
-import { ClasseModel } from "../../databases/models/classes.model"; // adapte
+import { StudentModel } from "../../databases/models/sudent.model";
+import { AnneeModel } from "../../databases/models/annee.model";
+import { ClasseModel } from "../../databases/models/classes.model";
 import { catchError } from "../utils/errorrequeste";
 import { sectionModel } from "../../databases/models/section.model";
-import { OPtionsModel } from "../../databases/models/Options.model";
 import Realm from "realm";
 
-// 👇 Plus de champ `section` en entrée : il est déduit de la classe.
-type InscriptionInput = {
-  classeId: string;
-  year: string;
-  sutudent: string;
-  dateInscription?: Date;
-  numeroOrdre?: string;
-  status?: "active" | "transferred" | "abandoned" | "revoked";
-  isNew?: boolean;
-  previewScool?: string;
-  previewScollAdress?: string;
-  previewScoollPhone?: string;
-  previewScollClassename?: string;
-};
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Helpers (identiques à avant)
-// ---------------------------------------------------------------------------
+/**
+ * Nettoie une valeur censée être un identifiant :
+ *  - enlève les guillemets JSON
+ *  - enlève les préfixes UUID(...) / ObjectId(...)
+ *    (String(bsonUuid) renvoie `UUID("...")`, ce qui casse l'ORM)
+ */
 function normalizeId(v: unknown): string | null {
   if (v == null || v === "") return null;
   let s = String(v).trim();
+
+  // 1) Enlève les guillemets JSON
   if (
     (s.startsWith('"') && s.endsWith('"')) ||
     (s.startsWith("'") && s.endsWith("'"))
@@ -39,10 +33,20 @@ function normalizeId(v: unknown): string | null {
       s = s.slice(1, -1);
     }
   }
+
+  // 2) Enlève les préfixes UUID(...) / ObjectId(...)
+  s = s.replace(/^UUID\(["']?/i, "").replace(/["']?\)$/i, "");
+  s = s.replace(/^ObjectId\(["']?/i, "").replace(/["']?\)$/i, "");
+
   s = String(s).trim();
   return s.length > 0 ? s : null;
 }
 
+/**
+ * Convertit une string en BSON UUID ou ObjectId selon le format.
+ * ⚠️ Utilisé UNIQUEMENT pour les requêtes `.find(...)`, jamais pour
+ *    `Model.create` / `findByIdAndUpdate` (qui attendent des strings brutes).
+ */
 function toRealmId(id: string): any {
   const uuidRe =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -58,18 +62,70 @@ function toRealmId(id: string): any {
   }
 }
 
+/**
+ * Cherche un document par id, en essayant le format UUID puis ObjectId,
+ * puis fallback en string brute, puis scan complet.
+ */
 async function findOneById(model: any, rawId: unknown) {
   const id = normalizeId(rawId);
   if (!id) return null;
-  const res = await model.find({ _id: toRealmId(id) });
-  if (Array.isArray(res)) return res[0] ?? null;
-  return res ?? null;
+
+  // Tentative 1 : avec le type BSON inféré
+  try {
+    const res = await model.find({ _id: toRealmId(id) });
+    const arr = Array.isArray(res) ? res : res ? [res] : [];
+    if (arr.length > 0) return arr[0];
+  } catch (e) {
+    /* on continue */
+  }
+
+  // Tentative 2 : fallback en string brute
+  try {
+    const res = await model.find({ _id: id });
+    const arr = Array.isArray(res) ? res : res ? [res] : [];
+    if (arr.length > 0) return arr[0];
+  } catch (e) {
+    /* on continue */
+  }
+
+  // Tentative 3 : scan complet
+  try {
+    const all = await model.find();
+    const arr = Array.isArray(all) ? all : all ? [all] : [];
+    return (
+      arr.find((doc: any) => {
+        const docId = normalizeId(doc._id ?? doc.id ?? "");
+        return docId === id;
+      }) ?? null
+    );
+  } catch (e) {
+    return null;
+  }
 }
 
 /**
- * Déduit la section à partir de la classe.
- * ⚠️ Source de vérité : `classe.sections`. On ne demande JAMAIS à
- * l'utilisateur de la saisir dans le formulaire d'inscription.
+ * Cherche une inscription existante pour un élève + une année.
+ * ⚠️ Utilise toRealmId car on fait un `.find(...)`.
+ */
+async function findExistingInscription(
+  studentId: string,
+  yearId: string,
+): Promise<any | null> {
+  try {
+    const list = await InscriptionModel.find({
+      sutudent: toRealmId(studentId),
+      year: toRealmId(yearId),
+    });
+    const arr = Array.isArray(list) ? list : list ? [list] : [];
+    return arr[0] ?? null;
+  } catch (e) {
+    console.warn("findExistingInscription: erreur", e);
+    return null;
+  }
+}
+
+/**
+ * Résout la section associée à une classe.
  */
 async function resolveSectionFromClasse(rawClasseId: string): Promise<{
   classe: any | null;
@@ -81,6 +137,10 @@ async function resolveSectionFromClasse(rawClasseId: string): Promise<{
   return { classe, sectionRawId };
 }
 
+/**
+ * Génère un numéro d'ordre unique par classe + année.
+ * ⚠️ Utilise toRealmId pour matcher les uuid du schéma Realm.
+ */
 async function generateNumeroOrdre(
   classeId: string,
   yearId: string,
@@ -103,43 +163,51 @@ async function generateNumeroOrdre(
 }
 
 /**
- * Résout les refs et garantit la cohérence section ↔ classe.
- * - `sectionData` est toujours prise depuis `classe.sections` (source de vérité).
- * - `optionData` est résolue via `classe.option`.
+ * Résout TOUTES les refs d'une inscription :
+ *  - studentData
+ *  - yearData
+ *  - classeData (avec sectionData embarqué)
+ *  - sectionData
  */
 async function populateInscription(ins: any) {
   if (!ins) return ins;
 
+  // 1) Références principales
   const [student, year, classe] = await Promise.all([
     ins.sutudent ? findOneById(StudentModel, ins.sutudent) : null,
     ins.year ? findOneById(AnneeModel, ins.year) : null,
     ins.classeId ? findOneById(ClasseModel, ins.classeId) : null,
   ]);
 
-  // ⚠️ On privilégie la section issue de la CLASSE (source de vérité),
-  //    et on retombe sur `ins.section` uniquement si la classe est absente
-  //    (cas d'un vieux document corrompu). On n'utilise PAS la section
-  //    saisie manuellement si elle diverge de la classe.
+  // 2) Section : priorité à la classe, fallback sur celle de l'inscription
   let sectionData: any = null;
   if (classe?.sections) {
     sectionData = await findOneById(sectionModel, classe.sections);
+    if (!sectionData) {
+      console.warn(
+        "[populateInscription] section introuvable pour id :",
+        classe.sections,
+      );
+    }
   } else if (ins.section) {
     sectionData = await findOneById(sectionModel, ins.section);
+    if (!sectionData) {
+      console.warn(
+        "[populateInscription] section (fallback) introuvable :",
+        ins.section,
+      );
+    }
   }
 
-  // Option via la classe
-  let optionData: any = null;
-  if (classe?.option) {
-    optionData = await findOneById(OPtionsModel, classe.option);
-  }
+  // 3) Enrichir classeData
+  const classeData = classe ? { ...classe, sectionData } : null;
 
   return {
     ...ins,
     studentData: student,
     yearData: year,
-    classeData: classe ? { ...classe, optionData } : null,
+    classeData,
     sectionData,
-    optionData,
   };
 }
 
@@ -147,8 +215,7 @@ async function populateInscription(ins: any) {
 // Module
 // ---------------------------------------------------------------------------
 export const inscriptionModule = {
-  /** Créer une inscription — la section est déduite de la classe */
-  create: async (data: InscriptionInput) => {
+  create: async (data: any) => {
     try {
       const rawStudent = normalizeId(data.sutudent);
       const rawYear = normalizeId(data.year);
@@ -159,7 +226,6 @@ export const inscriptionModule = {
       if (!rawYear) return { message: "Année obligatoire", success: false };
       if (!rawClasse) return { message: "Classe obligatoire", success: false };
 
-      // Vérifier étudiant + année
       const [studentExists, yearExists] = await Promise.all([
         findOneById(StudentModel, rawStudent),
         findOneById(AnneeModel, rawYear),
@@ -168,7 +234,22 @@ export const inscriptionModule = {
         return { message: "Étudiant introuvable", success: false };
       if (!yearExists) return { message: "Année introuvable", success: false };
 
-      // 👇 Déduire la section depuis la classe
+      // Unicité : une seule inscription par élève + année
+      const existingInscription = await findExistingInscription(
+        rawStudent,
+        rawYear,
+      );
+      if (existingInscription) {
+        const yearLabel = yearExists.libelle ?? "cette année";
+        const studentName = [studentExists.fname, studentExists.lname]
+          .filter(Boolean)
+          .join(" ");
+        return {
+          message: `Cet élève (${studentName || "élève"}) est déjà inscrit pour l'année ${yearLabel}. Une seule inscription par année scolaire est autorisée.`,
+          success: false,
+        };
+      }
+
       const { classe, sectionRawId } =
         await resolveSectionFromClasse(rawClasse);
       if (!classe) return { message: "Classe introuvable", success: false };
@@ -187,15 +268,16 @@ export const inscriptionModule = {
         };
       }
 
-      // Numéro d'ordre auto
       const numeroOrdre = await generateNumeroOrdre(rawClasse, rawYear);
 
+      // ⚠️ IMPORTANT : on passe des STRINGS BRUTES à Model.create,
+      //    PAS des BSON UUID/ObjectId. L'ORM se charge de la conversion.
+      //    Sinon → BSONTypeError "UUID string representations must be..."
       const inscription = await InscriptionModel.create({
-        classeId: toRealmId(rawClasse),
-        year: toRealmId(rawYear),
-        sutudent: toRealmId(rawStudent),
-        // 👇 Section recopiée automatiquement depuis la classe
-        section: toRealmId(sectionRawId),
+        classeId: rawClasse,
+        year: rawYear,
+        sutudent: rawStudent,
+        section: sectionRawId,
         dateInscription: data.dateInscription ?? new Date(),
         numeroOrdre,
         status: data.status ?? "active",
@@ -232,7 +314,6 @@ export const inscriptionModule = {
     }
   },
 
-  /** Inscriptions de l'année courante (par défaut au chargement) */
   findCurrentYearInscriptions: async () => {
     try {
       const now = new Date();
@@ -248,8 +329,11 @@ export const inscriptionModule = {
 
       if (!current) return { data: [], year: null, success: true };
 
+      const currentYearId = normalizeId(current._id);
+      if (!currentYearId) return { data: [], year: current, success: true };
+
       const list = await InscriptionModel.find({
-        year: toRealmId(String(current._id)),
+        year: toRealmId(currentYearId),
       });
       const arr = Array.isArray(list) ? list : list ? [list] : [];
       const populated = await Promise.all(
@@ -266,7 +350,14 @@ export const inscriptionModule = {
     try {
       const rawId = normalizeId(id);
       if (!rawId) return { message: "id invalide", success: false, data: null };
-      const found = await InscriptionModel.find({ _id: toRealmId(rawId) });
+      const found = await InscriptionModel.find({
+        _id: toRealmId(rawId),
+      }).populate([
+        {
+          path: "section",
+        },
+        { path: "classeId" },
+      ]);
       const ins = Array.isArray(found) ? found[0] : found;
       if (!ins)
         return {
@@ -352,14 +443,7 @@ export const inscriptionModule = {
     }
   },
 
-  /** Update : si la classe change → on recopie la section de la nouvelle classe */
-  update: async ({
-    id,
-    data,
-  }: {
-    id: string;
-    data: Partial<InscriptionInput>;
-  }) => {
+  update: async ({ id, data }: { id: string; data: any }) => {
     try {
       const rawId = normalizeId(id);
       if (!rawId) return { message: "id invalide", success: false };
@@ -372,7 +456,8 @@ export const inscriptionModule = {
         if (!raw) return { message: "sutudent invalide", success: false };
         if (!(await findOneById(StudentModel, raw)))
           return { message: "Étudiant introuvable", success: false };
-        payload.sutudent = toRealmId(raw);
+        // ⚠️ string brute (pas toRealmId) → l'ORM convertit
+        payload.sutudent = raw;
       }
 
       if (data.year !== undefined) {
@@ -380,14 +465,13 @@ export const inscriptionModule = {
         if (!raw) return { message: "year invalide", success: false };
         if (!(await findOneById(AnneeModel, raw)))
           return { message: "Année introuvable", success: false };
-        payload.year = toRealmId(raw);
+        // ⚠️ string brute
+        payload.year = raw;
       }
 
-      // 👇 Si la classe change, on recopie automatiquement sa section.
       if (data.classeId !== undefined) {
         const rawClasse = normalizeId(data.classeId);
         if (!rawClasse) return { message: "classeId invalide", success: false };
-
         const { classe, sectionRawId } =
           await resolveSectionFromClasse(rawClasse);
         if (!classe) return { message: "Classe introuvable", success: false };
@@ -404,17 +488,42 @@ export const inscriptionModule = {
             success: false,
           };
         }
-
-        payload.classeId = toRealmId(rawClasse);
-        payload.section = toRealmId(sectionRawId); // 👈 recopié
+        // ⚠️ strings brutes
+        payload.classeId = rawClasse;
+        payload.section = sectionRawId;
       }
 
-      // ⚠️ On ignore volontairement tout `data.section` envoyé par le front :
-      //    la section est TOUJOURS dérivée de la classe.
-      //    (Décommente la ligne ci-dessous si tu veux tracer une tentative.)
-      // if (data.section !== undefined) {
-      //   console.warn("update: 'section' ignoré, il est dérivé de la classe");
-      // }
+      // Unicité si élève ou année changent
+      if (data.sutudent !== undefined || data.year !== undefined) {
+        const currentFound = await InscriptionModel.find({ _id: realmId });
+        const current = Array.isArray(currentFound)
+          ? currentFound[0]
+          : currentFound;
+        if (!current) {
+          return { message: "Inscription non trouvée", success: false };
+        }
+        const targetStudent = payload.sutudent ?? normalizeId(current.sutudent);
+        const targetYear = payload.year ?? normalizeId(current.year);
+
+        // ⚠️ IMPORTANT : on utilise toRealmId car on fait un .find(...)
+        const existing = await InscriptionModel.find({
+          sutudent: toRealmId(targetStudent),
+          year: toRealmId(targetYear),
+        });
+        const arr = Array.isArray(existing)
+          ? existing
+          : existing
+            ? [existing]
+            : [];
+        const conflict = arr.find((i: any) => normalizeId(i._id) !== rawId);
+        if (conflict) {
+          return {
+            message:
+              "Cet élève possède déjà une inscription pour cette année scolaire.",
+            success: false,
+          };
+        }
+      }
 
       if (data.numeroOrdre !== undefined)
         payload.numeroOrdre = String(data.numeroOrdre);
@@ -434,9 +543,7 @@ export const inscriptionModule = {
       const updated = await InscriptionModel.findByIdAndUpdate(
         realmId,
         payload,
-        {
-          new: true,
-        },
+        { new: true },
       );
       if (!updated)
         return {

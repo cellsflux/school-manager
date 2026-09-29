@@ -1,96 +1,30 @@
 // server/modules/classe.module.ts
-import Realm from "realm";
 import { ClasseModel } from "../../databases/models/classes.model";
-import { OPtionsModel } from "../../databases/models/Options.model";
 import { sectionModel } from "../../databases/models/section.model";
-// ⚠️ Adapte le nom du modèle enseignant selon ton projet :
 import { TeacherModel } from "../../databases/models/Teacher.model";
 import { catchError } from "../utils/errorrequeste";
 
 type ClasseInput = {
   name: string;
-  option?: string | null; // objectId Option (optionnel)
-  sections: string; // objectId Section
+  sections: string;
   niveau?: number;
-  titulaire?: string | null; // objectId Teacher (optionnel)
+  titulaire?: string;
 };
 
-/**
- * Nettoie une valeur censée être un identifiant (uuid / objectId).
- * Enlève les guillemets JSON superflus puis trim.
- */
-function normalizeId(v: unknown): string | null {
-  if (v == null || v === "") return null;
-  let s = String(v).trim();
-  if (
-    (s.startsWith('"') && s.endsWith('"')) ||
-    (s.startsWith("'") && s.endsWith("'"))
-  ) {
-    try {
-      s = JSON.parse(s);
-    } catch {
-      s = s.slice(1, -1);
-    }
-  }
-  s = String(s).trim();
-  return s.length > 0 ? s : null;
-}
+// Single source of truth for which relations to resolve — reused everywhere,
+// exactly like your old POPULATE_PATHS constant.
+const POPULATE = ["sections", "titulaire"];
 
-/**
- * Construit l'objet BSON attendu par Realm (uuid ou objectId).
- */
-function toRealmId(id: string): any {
-  const uuidRe =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (uuidRe.test(id)) {
-    try {
-      return new Realm.BSON.UUID(id);
-    } catch {
-      /* fallback */
-    }
-  }
-  try {
-    return new Realm.BSON.ObjectId(id);
-  } catch {
-    return id;
-  }
-}
-
-/**
- * Cherche un document par id dans une collection Realm.
- * Retourne null si introuvable.
- */
-async function findOneById(model: any, rawId: unknown) {
-  const id = normalizeId(rawId);
-  if (!id) return null;
-  const realmId = toRealmId(id);
-  const res = await model.find({ _id: realmId });
-  if (Array.isArray(res)) return res[0] ?? null;
-  return res ?? null;
-}
-
-/**
- * Résout les 3 refs d'une classe : option, section, titulaire.
- */
-async function populateClasse(c: any) {
-  if (!c) return c;
-
-  const [option, section, titulaire] = await Promise.all([
-    c.option ? findOneById(OPtionsModel, c.option) : null,
-    c.sections ? findOneById(sectionModel, c.sections) : null,
-    c.titulaire ? findOneById(TeacherModel, c.titulaire) : null,
-  ]);
-
-  return {
-    ...c,
-    optionData: option,
-    sectionData: section,
-    titulaireData: titulaire,
-  };
-}
-
+// ---------------------------------------------------------------------------
+// Module
+// ---------------------------------------------------------------------------
+// No more normalizeId / toRealmId / findOneById / hydrateClasse helpers:
+// - _id and every `ref` field (sections, titulaire) are normalized
+//   automatically by the ORM — a raw string, a quoted string, or a real
+//   BSON id all work interchangeably, in filters AND in write payloads.
+// - populate() replaces the manual "join" functions entirely.
 export const classeModule = {
-  /** Créer une classe */
+  /** Create a class */
   create: async (data: ClasseInput) => {
     try {
       const name = (data.name || "").trim();
@@ -98,14 +32,13 @@ export const classeModule = {
         return { message: "Le nom est obligatoire", success: false };
       }
 
-      const rawSectionId = normalizeId(data.sections);
-      if (!rawSectionId) {
+      if (!data.sections) {
         return { message: "La section est obligatoire", success: false };
       }
-      const sectionId = toRealmId(rawSectionId);
 
-      // Vérifier que la section existe
-      const sectionExists = await findOneById(sectionModel, rawSectionId);
+      const sectionExists = await sectionModel.exists({
+        _id: data.sections as any,
+      });
       if (!sectionExists) {
         return {
           message: "Section introuvable (sections invalide)",
@@ -113,29 +46,12 @@ export const classeModule = {
         };
       }
 
-      // Option (optionnel)
-      let optionId: any = null;
-      if (data.option) {
-        const rawOptionId = normalizeId(data.option);
-        if (rawOptionId) {
-          const optionExists = await findOneById(OPtionsModel, rawOptionId);
-          if (!optionExists) {
-            return { message: "Option introuvable", success: false };
-          }
-          optionId = toRealmId(rawOptionId);
-        }
-      }
-
-      // Titulaire (optionnel)
-      let titulaireId: any = null;
       if (data.titulaire) {
-        const rawTeacherId = normalizeId(data.titulaire);
-        if (rawTeacherId) {
-          const teacherExists = await findOneById(TeacherModel, rawTeacherId);
-          if (!teacherExists) {
-            return { message: "Enseignant introuvable", success: false };
-          }
-          titulaireId = toRealmId(rawTeacherId);
+        const teacherExists = await TeacherModel.exists({
+          _id: data.titulaire as any,
+        });
+        if (!teacherExists) {
+          return { message: "Enseignant introuvable", success: false };
         }
       }
 
@@ -148,16 +64,17 @@ export const classeModule = {
 
       const classe = await ClasseModel.create({
         name,
-        option: optionId ?? "",
-        sections: sectionId,
+        sections: data.sections as any,
         niveau: isNaN(niveau) ? 0 : niveau,
-        titulaire: titulaireId ?? null,
+        titulaire: (data.titulaire ?? null) as any,
       });
 
-      const populated = await populateClasse(classe);
+      const hydrated = await ClasseModel.findById(classe._id as string, {
+        populate: POPULATE as any,
+      });
 
       return {
-        data: populated,
+        data: hydrated,
         success: true,
         message: "Classe créée avec succès",
       };
@@ -167,88 +84,49 @@ export const classeModule = {
     }
   },
 
-  /** Récupérer toutes les classes (refs résolues) */
+  /** Get every class */
   find: async () => {
     try {
-      const classes = await ClasseModel.find();
-      const list = Array.isArray(classes) ? classes : classes ? [classes] : [];
-      const populated = await Promise.all(
-        list.map((c: any) => populateClasse(c)),
-      );
-      return { data: populated, success: true };
+      const classes = await ClasseModel.find({}, { populate: POPULATE as any });
+      return { data: classes, success: true };
     } catch (error) {
       catchError(error);
       return { data: [], success: false };
     }
   },
 
-  /** Récupérer une classe par id */
+  /** Get a class by id */
   findById: async ({ id }: { id: string }) => {
     try {
-      const c = await findOneById(ClasseModel, id);
+      const c = await ClasseModel.findById(id, { populate: POPULATE as any });
       if (!c) {
-        return {
-          message: "Classe non trouvée",
-          success: false,
-          data: null,
-        };
+        return { message: "Classe non trouvée", success: false, data: null };
       }
-      const populated = await populateClasse(c);
-      return { data: populated, success: true, message: "Classe trouvée" };
+      return { data: c, success: true, message: "Classe trouvée" };
     } catch (error) {
       catchError(error);
       return { data: null, success: false };
     }
   },
 
-  /** Filtrer par section */
+  /** Filter by section */
   findBySection: async ({ sectionId }: { sectionId: string }) => {
     try {
-      const raw = normalizeId(sectionId);
-      if (!raw) {
-        return { data: [], success: false, message: "sectionId invalide" };
-      }
-      const sid = toRealmId(raw);
-      const list = await ClasseModel.find({ sections: sid });
-      const arr = Array.isArray(list) ? list : list ? [list] : [];
-      const populated = await Promise.all(
-        arr.map((c: any) => populateClasse(c)),
+      const list = await ClasseModel.find(
+        { sections: sectionId as any },
+        { populate: POPULATE as any },
       );
-      return { data: populated, success: true };
+      return { data: list, success: true };
     } catch (error) {
       catchError(error);
       return { data: [], success: false };
     }
   },
 
-  /** Filtrer par option */
-  findByOption: async ({ optionId }: { optionId: string }) => {
-    try {
-      const raw = normalizeId(optionId);
-      if (!raw) {
-        return { data: [], success: false, message: "optionId invalide" };
-      }
-      const oid = toRealmId(raw);
-      const list = await ClasseModel.find({ option: oid });
-      const arr = Array.isArray(list) ? list : list ? [list] : [];
-      const populated = await Promise.all(
-        arr.map((c: any) => populateClasse(c)),
-      );
-      return { data: populated, success: true };
-    } catch (error) {
-      catchError(error);
-      return { data: [], success: false };
-    }
-  },
-
-  /** Mettre à jour une classe */
+  /** Update a class */
   update: async ({ id, data }: { id: string; data: Partial<ClasseInput> }) => {
     try {
-      const rawId = normalizeId(id);
-      if (!rawId) return { message: "id invalide", success: false };
-      const realmId = toRealmId(rawId);
-
-      const payload: any = {};
+      const payload: Record<string, unknown> = {};
 
       if (data.name !== undefined) {
         payload.name = String(data.name).trim();
@@ -261,67 +139,41 @@ export const classeModule = {
       }
 
       if (data.sections !== undefined) {
-        const raw = normalizeId(data.sections);
-        if (!raw) {
-          return { message: "sections invalide", success: false };
-        }
-        const exists = await findOneById(sectionModel, raw);
-        if (!exists) {
-          return { message: "Section introuvable", success: false };
-        }
-        payload.sections = toRealmId(raw);
-      }
-
-      if (data.option !== undefined) {
-        if (data.option === null || data.option === "") {
-          payload.option = "";
-        } else {
-          const raw = normalizeId(data.option);
-          if (!raw) {
-            return { message: "option invalide", success: false };
-          }
-          const exists = await findOneById(OPtionsModel, raw);
-          if (!exists) {
-            return { message: "Option introuvable", success: false };
-          }
-          payload.option = toRealmId(raw);
-        }
+        const exists = await sectionModel.exists({ _id: data.sections as any });
+        if (!exists) return { message: "Section introuvable", success: false };
+        payload.sections = data.sections;
       }
 
       if (data.titulaire !== undefined) {
         if (data.titulaire === null || data.titulaire === "") {
           payload.titulaire = null;
         } else {
-          const raw = normalizeId(data.titulaire);
-          if (!raw) {
-            return { message: "titulaire invalide", success: false };
-          }
-          const exists = await findOneById(TeacherModel, raw);
-          if (!exists) {
+          const exists = await TeacherModel.exists({
+            _id: data.titulaire as any,
+          });
+          if (!exists)
             return { message: "Enseignant introuvable", success: false };
-          }
-          payload.titulaire = toRealmId(raw);
+          payload.titulaire = data.titulaire;
         }
       }
 
-      const updated = await ClasseModel.findByIdAndUpdate(realmId, payload, {
-        new: true,
-      });
-
+      const updated = await ClasseModel.findByIdAndUpdate(
+        id,
+        payload as Partial<ClasseInput>,
+        { new: true },
+      );
       if (!updated) {
-        return {
-          message: "Classe non trouvée",
-          success: false,
-          data: null,
-        };
+        return { message: "Classe non trouvée", success: false, data: null };
       }
 
-      const populated = await populateClasse(updated);
+      const hydrated = await ClasseModel.findById(id, {
+        populate: POPULATE as any,
+      });
 
       return {
         message: "Classe mise à jour avec succès",
         success: true,
-        data: populated,
+        data: hydrated,
       };
     } catch (error) {
       catchError(error);
@@ -329,19 +181,12 @@ export const classeModule = {
     }
   },
 
-  /** Supprimer une classe */
+  /** Delete a class */
   delete: async ({ id }: { id: string }) => {
     try {
-      const rawId = normalizeId(id);
-      if (!rawId) return { message: "id invalide", success: false };
-      const realmId = toRealmId(rawId);
-      const deleted = await ClasseModel.findByIdAndDelete(realmId);
+      const deleted = await ClasseModel.findByIdAndDelete(id);
       if (!deleted) {
-        return {
-          message: "Classe non trouvée",
-          success: false,
-          data: null,
-        };
+        return { message: "Classe non trouvée", success: false, data: null };
       }
       return {
         message: "Classe supprimée avec succès",

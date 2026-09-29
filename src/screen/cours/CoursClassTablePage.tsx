@@ -1,7 +1,7 @@
-// ClasseTablePage.tsx
+// src/pages/CoursClassTablePage.tsx
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
-  School,
+  Link2,
   Eye,
   Pencil,
   Trash2,
@@ -10,7 +10,11 @@ import {
   X,
   Plus,
   Layers,
+  BookOpen,
   UserCircle2,
+  Hash,
+  Percent,
+  ListOrdered,
 } from "lucide-react";
 import {
   DataTable,
@@ -25,7 +29,6 @@ import {
   Button,
   Text,
   Modal,
-  TextInput,
   Select,
   NumberInput,
   Avatar,
@@ -34,31 +37,39 @@ import { useDisclosure } from "@mantine/hooks";
 import { useConnecter } from "@/hooks/useConnecter";
 
 // ---------------------------------------------------------------------------
-// 1. Types (adaptés au populate natif)
+// 1. Types
 // ---------------------------------------------------------------------------
-type SectionLite = {
+type ClasseLite = {
   _id: string;
   name?: string;
-  slug?: string;
-  logo?: string;
-  description?: string;
-  isActive?: boolean;
+  niveau?: number;
+  sections?: { _id: string; name?: string } | string;
+};
+
+type CoursLite = {
+  _id: string;
+  name?: string;
+  shortname?: string;
+  coverImage?: string;
 };
 
 type TeacherLite = {
   _id: string;
   fname?: string;
+  fm_name?: string;
   lname?: string;
   picture?: string;
 };
 
-type Classe = {
+type CoursClass = {
   _id: string;
-  id?: string; // calculé côté front pour DataTable
-  name: string;
-  sections: SectionLite; // objet populé (obligatoire)
-  niveau?: number;
-  titulaire?: TeacherLite | null; // objet populé (ou null)
+  id?: string;
+  classid: ClasseLite | null;
+  coursid: CoursLite | null;
+  teacherId?: TeacherLite | null;
+  max_score?: number;
+  coefficient?: number;
+  display_order?: number;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 };
@@ -79,82 +90,123 @@ function formatDate(dateInput: Date | string | null | undefined): string {
 
 function teacherFullName(t?: TeacherLite | null): string {
   if (!t) return "—";
-  return [t.fname, t.lname].filter(Boolean).join(" ") || "—";
+  return [t.fname, t.fm_name, t.lname].filter(Boolean).join(" ") || "—";
 }
 
-function teacherInitials(t?: TeacherLite | null): string {
-  if (!t) return "?";
-  return (
-    `${(t.fname ?? "").charAt(0)}${(t.lname ?? "").charAt(0)}`.toUpperCase() ||
-    "?"
-  );
+function classeLabel(c?: ClasseLite | null): string {
+  if (!c) return "—";
+  const secName =
+    typeof c.sections === "object" && c.sections ? c.sections.name : undefined;
+  return [c.name, secName].filter(Boolean).join(" · ") || "—";
 }
 
 // ---------------------------------------------------------------------------
 // 3. Colonnes
 // ---------------------------------------------------------------------------
-const columns: ColumnDef<Classe>[] = [
+const columns: ColumnDef<CoursClass>[] = [
   {
-    key: "name",
-    header: "Classe",
+    key: "coursid",
+    header: "Cours",
     sortable: true,
-    getValue: (r) => r.name,
-    cell: (r) => <span className="font-medium text-foreground">{r.name}</span>,
-  },
-  {
-    key: "section",
-    header: "Section",
-    sortable: true,
-    getValue: (r) => r.sections?.name ?? "",
+    getValue: (r) => r.coursid?.name ?? "",
     cell: (r) => (
       <div className="flex items-center gap-2">
-        {r.sections?.logo ? (
+        {r.coursid?.coverImage ? (
           <img
-            src={r.sections.logo}
-            alt={r.sections.name ?? ""}
-            className="h-6 w-6 rounded-full object-cover border border-border"
+            src={r.coursid.coverImage}
+            alt={r.coursid.name ?? ""}
+            className="h-7 w-7 rounded object-cover border border-border"
           />
         ) : (
-          <div className="h-6 w-6 rounded-full flex items-center justify-center bg-muted text-muted-foreground">
-            <Layers className="h-3 w-3" />
+          <div className="h-7 w-7 rounded flex items-center justify-center bg-muted text-muted-foreground">
+            <BookOpen className="h-3.5 w-3.5" />
           </div>
         )}
-        <span className="text-foreground">{r.sections?.name ?? "—"}</span>
+        <div className="flex flex-col">
+          <span className="text-foreground font-medium">
+            {r.coursid?.name ?? "—"}
+          </span>
+          {r.coursid?.shortname && (
+            <span className="text-[10.5px] text-muted-foreground">
+              {r.coursid.shortname}
+            </span>
+          )}
+        </div>
       </div>
     ),
   },
   {
-    key: "niveau",
-    header: "Niveau",
+    key: "classid",
+    header: "Classe",
     sortable: true,
-    getValue: (r) => r.niveau ?? 0,
+    getValue: (r) => classeLabel(r.classid),
     cell: (r) => (
-      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-medium bg-muted text-foreground">
-        {r.niveau ?? "—"}
+      <div className="flex items-center gap-2">
+        <div className="h-6 w-6 rounded-full flex items-center justify-center bg-muted text-muted-foreground">
+          <Layers className="h-3 w-3" />
+        </div>
+        <span className="text-foreground">{classeLabel(r.classid)}</span>
+      </div>
+    ),
+  },
+  {
+    key: "teacherId",
+    header: "Enseignant",
+    sortable: true,
+    getValue: (r) => teacherFullName(r.teacherId),
+    cell: (r) => (
+      <div className="flex items-center gap-2">
+        {r.teacherId?.picture ? (
+          <Avatar src={r.teacherId.picture} size={24} radius="xl" />
+        ) : (
+          <div className="h-6 w-6 rounded-full flex items-center justify-center bg-muted text-muted-foreground">
+            <UserCircle2 className="h-3.5 w-3.5" />
+          </div>
+        )}
+        <span className="text-foreground">{teacherFullName(r.teacherId)}</span>
+      </div>
+    ),
+  },
+  {
+    key: "coefficient",
+    header: "Coef.",
+    sortable: true,
+    getValue: (r) => r.coefficient ?? 0,
+    cell: (r) => (
+      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium bg-muted text-foreground">
+        <Percent className="h-2.5 w-2.5" />
+        {r.coefficient ?? "—"}
       </span>
     ),
   },
   {
-    key: "titulaire",
-    header: "Titulaire",
+    key: "max_score",
+    header: "Barème",
     sortable: true,
-    getValue: (r) => teacherFullName(r.titulaire),
+    getValue: (r) => r.max_score ?? 0,
     cell: (r) => (
-      <div className="flex items-center gap-2">
-        {r.titulaire?.picture ? (
-          <Avatar src={r.titulaire.picture} size={24} radius="xl" />
-        ) : (
-          <div className="h-6 w-6 rounded-full flex items-center justify-center bg-muted text-muted-foreground text-[10px] font-semibold">
-            <UserCircle2 className="h-3.5 w-3.5" />
-          </div>
-        )}
-        <span className="text-foreground">{teacherFullName(r.titulaire)}</span>
-      </div>
+      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium bg-muted text-foreground">
+        <Hash className="h-2.5 w-2.5" />
+        {r.max_score ?? "—"}
+      </span>
+    ),
+  },
+  {
+    key: "display_order",
+    header: "Ordre",
+    sortable: true,
+    defaultVisible: false,
+    getValue: (r) => r.display_order ?? 0,
+    cell: (r) => (
+      <span className="inline-flex items-center gap-1 text-foreground">
+        <ListOrdered className="h-3 w-3 text-muted-foreground" />
+        {r.display_order ?? "—"}
+      </span>
     ),
   },
   {
     key: "createdAt",
-    header: "Créée le",
+    header: "Créé le",
     sortable: true,
     defaultVisible: false,
     getValue: (r) => r.createdAt?.toString(),
@@ -165,25 +217,30 @@ const columns: ColumnDef<Classe>[] = [
 // ---------------------------------------------------------------------------
 // 4. Filtres
 // ---------------------------------------------------------------------------
-const filters: FilterDef<Classe>[] = [
+const filters: FilterDef<CoursClass>[] = [
   {
-    key: "section",
-    label: "Section",
-    getValue: (r) => r.sections?.name ?? "",
+    key: "cours",
+    label: "Cours",
+    getValue: (r) => r.coursid?.name ?? "",
+  },
+  {
+    key: "classe",
+    label: "Classe",
+    getValue: (r) => r.classid?.name ?? "",
   },
 ];
 
 // ---------------------------------------------------------------------------
 // 5. Modal "Voir"
 // ---------------------------------------------------------------------------
-function ClasseDetailsModal({
-  classe,
+function CoursClassDetailsModal({
+  item,
   onClose,
 }: {
-  classe: Classe | null;
+  item: CoursClass | null;
   onClose: () => void;
 }) {
-  if (!classe) return null;
+  if (!item) return null;
   return (
     <div
       className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
@@ -196,14 +253,14 @@ function ClasseDetailsModal({
         <div className="mb-4 flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-full flex items-center justify-center bg-muted text-muted-foreground">
-              <School className="h-4 w-4" />
+              <Link2 className="h-4 w-4" />
             </div>
             <div>
               <h3 className="text-sm font-semibold text-foreground">
-                {classe.name}
+                {item.coursid?.name ?? "—"}
               </h3>
               <p className="text-[11px] text-muted-foreground">
-                Niveau {classe.niveau ?? "—"}
+                {classeLabel(item.classid)}
               </p>
             </div>
           </div>
@@ -218,20 +275,32 @@ function ClasseDetailsModal({
 
         <div className="space-y-2.5 text-[12.5px] text-muted-foreground">
           <p>
-            <span className="text-foreground font-medium">Section :</span>{" "}
-            {classe.sections?.name ?? "—"}
+            <span className="text-foreground font-medium">Cours :</span>{" "}
+            {item.coursid?.name ?? "—"}
           </p>
           <p>
-            <span className="text-foreground font-medium">Niveau :</span>{" "}
-            {classe.niveau ?? "—"}
+            <span className="text-foreground font-medium">Classe :</span>{" "}
+            {classeLabel(item.classid)}
           </p>
           <p>
-            <span className="text-foreground font-medium">Titulaire :</span>{" "}
-            {teacherFullName(classe.titulaire)}
+            <span className="text-foreground font-medium">Enseignant :</span>{" "}
+            {teacherFullName(item.teacherId)}
           </p>
           <p>
-            <span className="text-foreground font-medium">Créée le :</span>{" "}
-            {formatDate(classe.createdAt)}
+            <span className="text-foreground font-medium">Coefficient :</span>{" "}
+            {item.coefficient ?? "—"}
+          </p>
+          <p>
+            <span className="text-foreground font-medium">Barème :</span>{" "}
+            {item.max_score ?? "—"}
+          </p>
+          <p>
+            <span className="text-foreground font-medium">Ordre :</span>{" "}
+            {item.display_order ?? "—"}
+          </p>
+          <p>
+            <span className="text-foreground font-medium">Créé le :</span>{" "}
+            {formatDate(item.createdAt)}
           </p>
         </div>
 
@@ -252,7 +321,7 @@ function ClasseDetailsModal({
 // ---------------------------------------------------------------------------
 // 6. Modal formulaire
 // ---------------------------------------------------------------------------
-function ClasseFormModal({
+function CoursClassFormModal({
   opened,
   onClose,
   onSaved,
@@ -261,22 +330,26 @@ function ClasseFormModal({
   opened: boolean;
   onClose: () => void;
   onSaved: () => void;
-  editing: Classe | null;
+  editing: CoursClass | null;
 }) {
   const {
+    coursClass: CoursClassApi,
     classe: ClasseApi,
-    section: SectionApi,
-    Teacher: TeacherApi, // 👈 branche le module Teacher
+    cours: CoursApi,
+    Teacher: TeacherApi,
   } = useConnecter();
 
-  const [sections, setSections] = useState<SectionLite[]>([]);
+  const [classes, setClasses] = useState<ClasseLite[]>([]);
+  const [coursList, setCoursList] = useState<CoursLite[]>([]);
   const [teachers, setTeachers] = useState<TeacherLite[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(false);
 
-  const [name, setName] = useState("");
-  const [sectionId, setSectionId] = useState<string | null>(null);
-  const [niveau, setNiveau] = useState<number | "">("");
-  const [titulaireId, setTitulaireId] = useState<string | null>(null);
+  const [classId, setClassId] = useState<string | null>(null);
+  const [coursId, setCoursId] = useState<string | null>(null);
+  const [teacherId, setTeacherId] = useState<string | null>(null);
+  const [maxScore, setMaxScore] = useState<number | "">(20);
+  const [coefficient, setCoefficient] = useState<number | "">(1);
+  const [displayOrder, setDisplayOrder] = useState<number | "">(0);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -289,34 +362,47 @@ function ClasseFormModal({
     const load = async () => {
       setLoadingRefs(true);
       try {
-        const [secRes, teaRes] = await Promise.all([
-          SectionApi?.find ? SectionApi.find() : Promise.resolve({ data: [] }),
-          TeacherApi?.getAll
-            ? TeacherApi.getAll({ page: 1, limit: 500 })
-            : TeacherApi?.find
-              ? TeacherApi.find()
-              : Promise.resolve({ data: [] }),
+        const [clsRes, crsRes, teaRes] = await Promise.all([
+          ClasseApi?.find ? ClasseApi.find() : Promise.resolve({ data: [] }),
+          CoursApi?.find ? CoursApi.find() : Promise.resolve({ data: [] }),
+          TeacherApi.getAll({ page: 1, limit: 500 }),
         ]);
 
         if (cancelled) return;
 
-        // ---- Sections ----
-        const sectionsList: SectionLite[] =
-          secRes?.data ?? (Array.isArray(secRes) ? secRes : []);
-
-        // ---- Enseignants ----
+        const classesRaw =
+          clsRes?.data ?? (Array.isArray(clsRes) ? clsRes : []);
+        const coursRaw = crsRes?.data ?? (Array.isArray(crsRes) ? crsRes : []);
         const teachersRaw =
           teaRes?.data ?? (Array.isArray(teaRes) ? teaRes : []);
 
-        const teachersList: TeacherLite[] = teachersRaw.map((t: any) => ({
-          _id: t._id?.toString?.() ?? t.id ?? String(t._id),
-          fname: t.fname,
-          lname: t.lname,
-          picture: t.picture,
-        }));
+        setClasses(
+          classesRaw.map((c: any) => ({
+            _id: c._id?.toString?.() ?? c.id ?? String(c._id),
+            name: c.name,
+            niveau: c.niveau,
+            sections: c.sections,
+          })),
+        );
 
-        setSections(sectionsList);
-        setTeachers(teachersList);
+        setCoursList(
+          coursRaw.map((c: any) => ({
+            _id: c._id?.toString?.() ?? c.id ?? String(c._id),
+            name: c.name,
+            shortname: c.shortname,
+            coverImage: c.coverImage,
+          })),
+        );
+
+        setTeachers(
+          teachersRaw.map((t: any) => ({
+            _id: t._id?.toString?.() ?? t.id ?? String(t._id),
+            fname: t.fname,
+            fm_name: t.fm_name,
+            lname: t.lname,
+            picture: t.picture,
+          })),
+        );
       } catch (e) {
         console.error("Erreur chargement référentiels:", e);
       } finally {
@@ -335,30 +421,36 @@ function ClasseFormModal({
   useEffect(() => {
     if (!opened) return;
     if (editing) {
-      setName(editing.name || "");
-      setSectionId(editing.sections?._id ?? null);
-      setNiveau(
-        typeof editing.niveau === "number"
-          ? editing.niveau
-          : (editing.niveau ?? ""),
+      setClassId(editing.classid?._id ?? null);
+      setCoursId(editing.coursid?._id ?? null);
+      setTeacherId(editing.teacherId?._id ?? null);
+      setMaxScore(
+        typeof editing.max_score === "number" ? editing.max_score : 20,
       );
-      setTitulaireId(editing.titulaire?._id ?? null);
+      setCoefficient(
+        typeof editing.coefficient === "number" ? editing.coefficient : 1,
+      );
+      setDisplayOrder(
+        typeof editing.display_order === "number" ? editing.display_order : 0,
+      );
     } else {
-      setName("");
-      setSectionId(null);
-      setNiveau("");
-      setTitulaireId(null);
+      setClassId(null);
+      setCoursId(null);
+      setTeacherId(null);
+      setMaxScore(20);
+      setCoefficient(1);
+      setDisplayOrder(0);
     }
     setError(null);
   }, [opened, editing]);
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      setError("Le nom de la classe est obligatoire.");
+    if (!classId) {
+      setError("La classe est obligatoire.");
       return;
     }
-    if (!sectionId) {
-      setError("La section est obligatoire.");
+    if (!coursId) {
+      setError("Le cours est obligatoire.");
       return;
     }
 
@@ -366,20 +458,29 @@ function ClasseFormModal({
     setError(null);
     try {
       const payload: any = {
-        name: name.trim(),
-        sections: sectionId,
-        niveau: typeof niveau === "number" && !isNaN(niveau) ? niveau : 0,
-        titulaire: titulaireId || null,
+        classid: classId,
+        coursid: coursId,
+        teacherId: teacherId || null,
+        max_score:
+          typeof maxScore === "number" && !isNaN(maxScore) ? maxScore : 20,
+        coefficient:
+          typeof coefficient === "number" && !isNaN(coefficient)
+            ? coefficient
+            : 1,
+        display_order:
+          typeof displayOrder === "number" && !isNaN(displayOrder)
+            ? displayOrder
+            : 0,
       };
 
       let result;
       if (editing) {
-        result = await ClasseApi.update({
+        result = await CoursClassApi.update({
           id: editing._id,
           data: payload,
         });
       } else {
-        result = await ClasseApi.create(payload);
+        result = await CoursClassApi.create(payload);
       }
 
       if (result?.success === false) {
@@ -397,24 +498,33 @@ function ClasseFormModal({
   };
 
   // -------------------- Options Select --------------------
-  const sectionOptions = useMemo(
+  const classeOptions = useMemo(
     () =>
-      sections.map((s) => ({
-        value: s._id,
-        label: s.name ?? "—",
-        leftSection: s.logo ? (
+      classes.map((c) => ({
+        value: c._id,
+        label: classeLabel(c),
+      })),
+    [classes],
+  );
+
+  const coursOptions = useMemo(
+    () =>
+      coursList.map((c) => ({
+        value: c._id,
+        label: c.name ?? "—",
+        leftSection: c.coverImage ? (
           <img
-            src={s.logo}
-            alt={s.name ?? ""}
-            className="h-[22px] w-[22px] rounded-full object-cover"
+            src={c.coverImage}
+            alt={c.name ?? ""}
+            className="h-[22px] w-[22px] rounded object-cover"
           />
         ) : (
-          <div className="h-[22px] w-[22px] rounded-full flex items-center justify-center bg-muted text-muted-foreground font-semibold text-[10px]">
-            {(s.name ?? "?").charAt(0).toUpperCase()}
+          <div className="h-[22px] w-[22px] rounded flex items-center justify-center bg-muted text-muted-foreground">
+            <BookOpen className="h-3 w-3" />
           </div>
         ),
       })),
-    [sections],
+    [coursList],
   );
 
   const teacherOptions = useMemo(
@@ -426,7 +536,7 @@ function ClasseFormModal({
           <Avatar src={t.picture} size={22} radius="xl" />
         ) : (
           <div className="h-[22px] w-[22px] rounded-full flex items-center justify-center bg-muted text-muted-foreground text-[10px] font-semibold">
-            {teacherInitials(t)}
+            {(t.fname ?? "?").charAt(0).toUpperCase()}
           </div>
         ),
       })),
@@ -437,7 +547,11 @@ function ClasseFormModal({
     <Modal
       opened={opened}
       onClose={onClose}
-      title={editing ? "Modifier la classe" : "Nouvelle classe"}
+      title={
+        editing
+          ? "Modifier l'attribution cours / classe"
+          : "Nouvelle attribution cours / classe"
+      }
       centered
       radius="md"
       size="lg"
@@ -446,41 +560,34 @@ function ClasseFormModal({
       withCloseButton={!saving}
     >
       <div className="space-y-4">
-        <TextInput
-          label="Nom de la classe"
-          placeholder="Ex: 1ère A"
-          value={name}
-          onChange={(e) => setName(e.currentTarget.value)}
-          required
-          disabled={saving}
-        />
-
         <Select
-          label="Section"
-          placeholder={loadingRefs ? "Chargement…" : "Choisir une section…"}
-          data={sectionOptions}
-          value={sectionId}
-          onChange={setSectionId}
+          label="Cours"
+          placeholder={loadingRefs ? "Chargement…" : "Choisir un cours…"}
+          data={coursOptions}
+          value={coursId}
+          onChange={setCoursId}
           searchable
           required
           disabled={saving || loadingRefs}
-          nothingFoundMessage="Aucune section"
+          nothingFoundMessage="Aucun cours"
           maxDropdownHeight={280}
         />
 
-        <NumberInput
-          label="Niveau"
-          placeholder="Ex: 1"
-          value={niveau}
-          onChange={(v) => setNiveau(typeof v === "number" ? v : "")}
-          min={0}
-          max={20}
-          disabled={saving}
+        <Select
+          label="Classe"
+          placeholder={loadingRefs ? "Chargement…" : "Choisir une classe…"}
+          data={classeOptions}
+          value={classId}
+          onChange={setClassId}
+          searchable
+          required
+          disabled={saving || loadingRefs}
+          nothingFoundMessage="Aucune classe"
+          maxDropdownHeight={280}
         />
 
-        {/* Titulaire — alimenté par TeacherApi */}
         <Select
-          label="Titulaire (optionnel)"
+          label="Enseignant (optionnel)"
           placeholder={
             loadingRefs
               ? "Chargement…"
@@ -489,14 +596,42 @@ function ClasseFormModal({
                 : "Choisir un enseignant…"
           }
           data={teacherOptions}
-          value={titulaireId}
-          onChange={setTitulaireId}
+          value={teacherId}
+          onChange={setTeacherId}
           searchable
           clearable
           disabled={saving || loadingRefs || teachers.length === 0}
           nothingFoundMessage="Aucun enseignant"
           maxDropdownHeight={280}
         />
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <NumberInput
+            label="Barème"
+            placeholder="20"
+            value={maxScore}
+            onChange={(v) => setMaxScore(typeof v === "number" ? v : "")}
+            min={0}
+            disabled={saving}
+          />
+          <NumberInput
+            label="Coefficient"
+            placeholder="1"
+            value={coefficient}
+            onChange={(v) => setCoefficient(typeof v === "number" ? v : "")}
+            min={0}
+            step={0.5}
+            disabled={saving}
+          />
+          <NumberInput
+            label="Ordre d'affichage"
+            placeholder="0"
+            value={displayOrder}
+            onChange={(v) => setDisplayOrder(typeof v === "number" ? v : "")}
+            min={0}
+            disabled={saving}
+          />
+        </div>
 
         {error && (
           <p className="rounded-lg bg-muted px-3 py-2 text-[11.5px] text-muted-foreground">
@@ -533,38 +668,38 @@ function ClasseFormModal({
 // ---------------------------------------------------------------------------
 // 7. Contenu de la table
 // ---------------------------------------------------------------------------
-function ClasseTableContent() {
-  const { classe: ClasseApi } = useConnecter();
+function CoursClassTableContent() {
+  const { coursClass: CoursClassApi } = useConnecter();
 
   const [loading, setLoading] = useState(false);
-  const [classes, setClasses] = useState<Classe[]>([]);
+  const [items, setItems] = useState<CoursClass[]>([]);
   const [totalItems, setTotalItems] = useState(0);
 
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [search, setSearch] = useState("");
   const [activeFilters, setActiveFilters] = useState<Record<string, any>>({});
-  const [sortKey, setSortKey] = useState<string>("name");
+  const [sortKey, setSortKey] = useState<string>("coursid");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
-  const [viewed, setViewed] = useState<Classe | null>(null);
+  const [viewed, setViewed] = useState<CoursClass | null>(null);
 
   const [deleteOpened, setDeleteOpened] = useState(false);
-  const [toDelete, setToDelete] = useState<Classe | null>(null);
+  const [toDelete, setToDelete] = useState<CoursClass | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [formOpened, formCtl] = useDisclosure(false);
-  const [editing, setEditing] = useState<Classe | null>(null);
+  const [editing, setEditing] = useState<CoursClass | null>(null);
 
   // -------------------- Chargement --------------------
-  const fetchClasses = useCallback(async () => {
+  const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await ClasseApi.find();
+      const result = await CoursClassApi.find();
       const list: any[] = Array.isArray(result) ? result : (result?.data ?? []);
 
-      const normalized: Classe[] = list.map((c) => ({
+      const normalized: CoursClass[] = list.map((c) => ({
         ...c,
         id: c._id?.toString?.() ?? String(c._id),
         createdAt: c.createdAt
@@ -579,39 +714,40 @@ function ClasseTableContent() {
           : undefined,
       }));
 
-      setClasses(normalized);
+      setItems(normalized);
       setTotalItems(normalized.length);
     } catch (e) {
-      console.error("Erreur lors du chargement des classes:", e);
-      setClasses([]);
+      console.error("Erreur lors du chargement:", e);
+      setItems([]);
       setTotalItems(0);
     } finally {
       setLoading(false);
     }
-  }, [ClasseApi]);
+  }, [CoursClassApi]);
 
   useEffect(() => {
-    fetchClasses();
-  }, [fetchClasses]);
+    fetchItems();
+  }, [fetchItems]);
 
   // -------------------- Filtres / tri / recherche --------------------
   const filteredAndSorted = useMemo(() => {
-    let arr = [...classes];
+    let arr = [...items];
 
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       arr = arr.filter(
         (c) =>
-          c.name.toLowerCase().includes(q) ||
-          (c.sections?.name ?? "").toLowerCase().includes(q) ||
-          teacherFullName(c.titulaire).toLowerCase().includes(q),
+          (c.coursid?.name ?? "").toLowerCase().includes(q) ||
+          (c.classid?.name ?? "").toLowerCase().includes(q) ||
+          teacherFullName(c.teacherId).toLowerCase().includes(q),
       );
     }
 
-    if (activeFilters.section) {
-      arr = arr.filter(
-        (c) => (c.sections?.name ?? "") === activeFilters.section,
-      );
+    if (activeFilters.cours) {
+      arr = arr.filter((c) => (c.coursid?.name ?? "") === activeFilters.cours);
+    }
+    if (activeFilters.classe) {
+      arr = arr.filter((c) => (c.classid?.name ?? "") === activeFilters.classe);
     }
 
     arr.sort((a, b) => {
@@ -630,7 +766,7 @@ function ClasseTableContent() {
     });
 
     return arr;
-  }, [classes, search, activeFilters, sortKey, sortDir]);
+  }, [items, search, activeFilters, sortKey, sortDir]);
 
   const paginated = useMemo(() => {
     const start = (page - 1) * limit;
@@ -662,7 +798,7 @@ function ClasseTableContent() {
   }, []);
 
   // -------------------- Actions --------------------
-  const handleView = useCallback((c: Classe) => setViewed(c), []);
+  const handleView = useCallback((c: CoursClass) => setViewed(c), []);
 
   const handleCreate = useCallback(() => {
     setEditing(null);
@@ -670,14 +806,14 @@ function ClasseTableContent() {
   }, [formCtl]);
 
   const handleEdit = useCallback(
-    (c: Classe) => {
+    (c: CoursClass) => {
       setEditing(c);
       formCtl.open();
     },
     [formCtl],
   );
 
-  const handleAskDelete = useCallback((c: Classe) => {
+  const handleAskDelete = useCallback((c: CoursClass) => {
     setToDelete(c);
     setDeleteError(null);
     setDeleteOpened(true);
@@ -695,16 +831,16 @@ function ClasseTableContent() {
     setDeleting(true);
     setDeleteError(null);
     try {
-      const result = await ClasseApi.delete({
+      const result = await CoursClassApi.delete({
         id: toDelete.id ?? toDelete._id,
       });
       if (result?.success) {
         setDeleteOpened(false);
         setToDelete(null);
-        await fetchClasses();
+        await fetchItems();
       } else {
         setDeleteError(
-          result?.message || "Erreur lors de la suppression de la classe.",
+          result?.message || "Erreur lors de la suppression de l'attribution.",
         );
       }
     } catch (e) {
@@ -713,9 +849,9 @@ function ClasseTableContent() {
     } finally {
       setDeleting(false);
     }
-  }, [toDelete, ClasseApi, fetchClasses]);
+  }, [toDelete, CoursClassApi, fetchItems]);
 
-  const rowActions: RowAction<Classe>[] = useMemo(
+  const rowActions: RowAction<CoursClass>[] = useMemo(
     () => [
       { key: "view", label: "Voir", icon: Eye, onClick: handleView },
       { key: "edit", label: "Modifier", icon: Pencil, onClick: handleEdit },
@@ -747,7 +883,7 @@ function ClasseTableContent() {
           className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-[13px] font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" />
-          Nouvelle classe
+          Nouvelle attribution
         </button>
       </div>
 
@@ -755,16 +891,16 @@ function ClasseTableContent() {
         data={paginated}
         columns={columns}
         getRowId={(r) => r.id || r._id || ""}
-        title="Classes"
-        icon={School}
-        subtitleLabel="classe"
+        title="Attributions cours / classe"
+        icon={Link2}
+        subtitleLabel="attribution"
         loading={loading}
-        searchPlaceholder="Rechercher une classe…"
+        searchPlaceholder="Rechercher une attribution…"
         searchFields={(r) =>
-          `${r.name} ${r.sections?.name ?? ""} ${teacherFullName(r.titulaire)}`
+          `${r.coursid?.name ?? ""} ${r.classid?.name ?? ""} ${teacherFullName(r.teacherId)}`
         }
         filters={filters}
-        defaultSortKey="name"
+        defaultSortKey="coursid"
         defaultSortDir="asc"
         rowActions={rowActions}
         pagination={paginationProps}
@@ -776,11 +912,10 @@ function ClasseTableContent() {
         enableExport={false as any}
       />
 
-      <ClasseDetailsModal classe={viewed} onClose={() => setViewed(null)} />
+      <CoursClassDetailsModal item={viewed} onClose={() => setViewed(null)} />
 
-      {/* Confirmation de suppression */}
       <style>{`
-        .classe-delete-dialog { transform: translate(-50%, -50%); }
+        .coursclass-delete-dialog { transform: translate(-50%, -50%); }
       `}</style>
       <Dialog
         opened={deleteOpened}
@@ -789,7 +924,7 @@ function ClasseTableContent() {
         size="md"
         radius="md"
         position={{ top: "50%", left: "50%" }}
-        className="classe-delete-dialog"
+        className="coursclass-delete-dialog"
         shadow="lg"
       >
         <div className="space-y-3">
@@ -799,16 +934,16 @@ function ClasseTableContent() {
             </div>
             <div className="min-w-0">
               <Text size="sm" fw={600} className="!text-foreground">
-                Voulez-vous supprimer cette classe ?
+                Voulez-vous supprimer cette attribution ?
               </Text>
               {toDelete && (
                 <p className="mt-1 text-[12px] text-muted-foreground">
                   <span className="font-medium text-foreground">
-                    {toDelete.name}
+                    {toDelete.coursid?.name ?? "—"}
                   </span>{" "}
-                  — Section{" "}
+                  →{" "}
                   <span className="font-medium text-foreground">
-                    {toDelete.sections?.name ?? "—"}
+                    {toDelete.classid?.name ?? "—"}
                   </span>{" "}
                   sera définitivement supprimée. Cette action est irréversible.
                 </p>
@@ -848,10 +983,10 @@ function ClasseTableContent() {
         </div>
       </Dialog>
 
-      <ClasseFormModal
+      <CoursClassFormModal
         opened={formOpened}
         onClose={formCtl.close}
-        onSaved={fetchClasses}
+        onSaved={fetchItems}
         editing={editing}
       />
     </>
@@ -861,6 +996,6 @@ function ClasseTableContent() {
 // ---------------------------------------------------------------------------
 // 8. Page
 // ---------------------------------------------------------------------------
-export default function ClasseTablePage() {
-  return <ClasseTableContent />;
+export default function CoursClassTablePage() {
+  return <CoursClassTableContent />;
 }

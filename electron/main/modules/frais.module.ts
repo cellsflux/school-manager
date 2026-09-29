@@ -18,7 +18,6 @@ import { catchError } from "../utils/errorrequeste";
 type FraisInput = {
   motif: string;
   type: string;
-  description?: string;
   montant: number;
   devise: string;
   student_id: string;
@@ -47,11 +46,24 @@ type Filters = {
 };
 
 // ---------------------------------------------------------------------------
-// Helpers de normalisation
+// Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Nettoie une valeur censée être un identifiant :
+ *  - enlève les guillemets JSON
+ *  - enlève les préfixes UUID(...) / ObjectId(...)
+ *    (String(bsonUuid) renvoie `UUID("...")`, ce qui casse l'ORM)
+ *  - gère aussi les objets BSON qui exposent `.toString()`
+ *
+ * ⚠️ CORRECTIF : c'est cette fonction qui empêche le BSONTypeError
+ *    quand `active.section` est un Realm.BSON.UUID.
+ */
 function normalizeId(v: unknown): string | null {
   if (v == null || v === "") return null;
   let s = String(v).trim();
+
+  // 1) Enlève les guillemets JSON
   if (
     (s.startsWith('"') && s.endsWith('"')) ||
     (s.startsWith("'") && s.endsWith("'"))
@@ -62,19 +74,27 @@ function normalizeId(v: unknown): string | null {
       s = s.slice(1, -1);
     }
   }
+
+  // 2) Enlève les préfixes UUID(...) / ObjectId(...)
+  s = s.replace(/^UUID\(["']?/i, "").replace(/["']?\)$/i, "");
+  s = s.replace(/^ObjectId\(["']?/i, "").replace(/["']?\)$/i, "");
+
   s = String(s).trim();
   return s.length > 0 ? s : null;
 }
 
+/**
+ * Convertit une string en BSON UUID ou ObjectId selon le format.
+ * ⚠️ Utilisé UNIQUEMENT pour les requêtes `.find(...)`,
+ *    jamais pour `Model.create` (qui attend des strings brutes).
+ */
 function toRealmId(id: string): any {
   const uuidRe =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (uuidRe.test(id)) {
     try {
       return new Realm.BSON.UUID(id);
-    } catch {
-      /* fallback */
-    }
+    } catch {}
   }
   try {
     return new Realm.BSON.ObjectId(id);
@@ -83,23 +103,79 @@ function toRealmId(id: string): any {
   }
 }
 
+/**
+ * Cherche un document par id, avec 3 tentatives :
+ *  1. BSON (UUID ou ObjectId)
+ *  2. String brute
+ *  3. Scan complet + comparaison String() normalisée
+ */
 async function findOneById(model: any, rawId: unknown) {
   const id = normalizeId(rawId);
   if (!id) return null;
-  const res = await model.find({ _id: toRealmId(id) });
-  return Array.isArray(res) ? (res[0] ?? null) : (res ?? null);
+
+  // 1) BSON
+  try {
+    const res = await model.find({ _id: toRealmId(id) });
+    const arr = Array.isArray(res) ? res : res ? [res] : [];
+    if (arr.length > 0) return arr[0];
+  } catch (e) {
+    /* continue */
+  }
+
+  // 2) String brute
+  try {
+    const res = await model.find({ _id: id });
+    const arr = Array.isArray(res) ? res : res ? [res] : [];
+    if (arr.length > 0) return arr[0];
+  } catch (e) {
+    /* continue */
+  }
+
+  // 3) Scan complet
+  try {
+    const all = await model.find();
+    const arr = Array.isArray(all) ? all : all ? [all] : [];
+    return (
+      arr.find((doc: any) => {
+        const docId = normalizeId(doc._id ?? doc.id ?? "");
+        return docId === id;
+      }) ?? null
+    );
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 🎯 Résout une CLASSE et sa section interne.
+ */
+async function populateClasse(classeId: unknown) {
+  if (!classeId) return null;
+  const classe = await findOneById(ClasseModel, classeId);
+  if (!classe) return null;
+
+  let sectionData: any = null;
+  if (classe.sections) {
+    sectionData = await findOneById(sectionModel, classe.sections);
+  }
+
+  return {
+    ...classe,
+    sectionData,
+  };
 }
 
 /**
  * Génère un numéro de reçu unique par année scolaire.
- * Format : REC-<année>-<séquence 6 chiffres>
+ * ⚠️ Utilise toRealmId car `year_id` est un uuid dans le schéma Realm.
  */
 async function generateNumeroRecu(
   yearId: string,
   yearLabel?: string,
 ): Promise<string> {
   try {
-    const list = await FraisModel.find({ year_id: toRealmId(yearId) });
+    const realmYearId = toRealmId(yearId);
+    const list = await FraisModel.find({ year_id: realmYearId });
     const arr = Array.isArray(list) ? list : list ? [list] : [];
     const max = arr.reduce((m: number, f: any) => {
       const n = parseInt(
@@ -121,21 +197,25 @@ async function generateNumeroRecu(
 }
 
 /**
- * Enrichit un frais avec étudiant, année, section, classe.
+ * 🎯 Enrichit un frais avec TOUTES ses relations.
  */
 async function populateFrais(f: any) {
   if (!f) return f;
-  const [student, year, section, classe] = await Promise.all([
+
+  const [student, year, sectionFromFrais, classe] = await Promise.all([
     f.student_id ? findOneById(StudentModel, f.student_id) : null,
     f.year_id ? findOneById(AnneeModel, f.year_id) : null,
     f.section_id ? findOneById(sectionModel, f.section_id) : null,
-    f.classe_id ? findOneById(ClasseModel, f.classe_id) : null,
+    f.classe_id ? populateClasse(f.classe_id) : null,
   ]);
+
+  const sectionData = sectionFromFrais ?? classe?.sectionData ?? null;
+
   return {
     ...f,
     studentData: student,
     yearData: year,
-    sectionData: section,
+    sectionData,
     classeData: classe,
   };
 }
@@ -144,15 +224,11 @@ async function populateFrais(f: any) {
 // Module
 // ---------------------------------------------------------------------------
 export const fraisModule = {
-  /**
-   * Créer une perception de frais.
-   * - Vérifie l'élève et l'année
-   * - Déduit section et classe depuis l'inscription active
-   * - Génère un numéro de reçu unique
-   * - La devise est libre (source : config établissement)
-   */
   create: async (data: FraisInput) => {
     try {
+      // ---------------------------------------------------------------------
+      // 1) Normalisation des ids obligatoires
+      // ---------------------------------------------------------------------
       const rawStudent = normalizeId(data.student_id);
       const rawYear = normalizeId(data.year_id);
 
@@ -169,12 +245,14 @@ export const fraisModule = {
         return { message: "Mode de paiement invalide", success: false };
       }
 
-      // ✅ Devise : pas de validation stricte (source de vérité = établissement)
       const devise = String(data.devise ?? "").trim();
       if (!devise) {
         return { message: "Devise obligatoire", success: false };
       }
 
+      // ---------------------------------------------------------------------
+      // 2) Vérification existence élève + année
+      // ---------------------------------------------------------------------
       const [student, year] = await Promise.all([
         findOneById(StudentModel, rawStudent),
         findOneById(AnneeModel, rawYear),
@@ -182,9 +260,13 @@ export const fraisModule = {
       if (!student) return { message: "Élève introuvable", success: false };
       if (!year) return { message: "Année introuvable", success: false };
 
-      // Déduire section + classe depuis l'inscription active de l'élève
-      let sectionId: any = null;
-      let classeId: any = null;
+      // ---------------------------------------------------------------------
+      // 3) Déduire section + classe depuis l'inscription active
+      //    ⚠️ CORRECTIF : on passe par normalizeId() pour extraire une
+      //    string propre depuis un BSON UUID éventuel (`active.section`).
+      // ---------------------------------------------------------------------
+      let sectionId: string | any = null;
+      let classeId: string | any = null;
       try {
         const inscriptions = await InscriptionModel.find({
           sutudent: toRealmId(rawStudent),
@@ -198,38 +280,78 @@ export const fraisModule = {
         const active =
           arr.find((i: any) => i.status === "active") ?? arr[0] ?? null;
         if (active) {
-          sectionId = active.section ?? null;
-          classeId = active.classeId ?? null;
+          sectionId = normalizeId(active.section);
+          classeId = normalizeId(active.classeId);
         }
       } catch (e) {
         console.warn("create frais: inscription introuvable", e);
       }
 
+      // ---------------------------------------------------------------------
+      // 4) Numéro de reçu
+      // ---------------------------------------------------------------------
       const yearLabel = year.libelle ?? String(new Date().getFullYear());
       const numeroRecu = await generateNumeroRecu(rawYear, yearLabel);
 
-      const frais = await FraisModel.create({
+      // ---------------------------------------------------------------------
+      // 5) percu_par : uuid optionnel → null (JAMAIS "")
+      // ---------------------------------------------------------------------
+      const percuParId: any = data.percu_par
+        ? normalizeId(data.percu_par)
+        : null;
+
+      // ---------------------------------------------------------------------
+      // 6) DEBUG : on log ce qui est envoyé à l'ORM
+      // ---------------------------------------------------------------------
+      /* console.log("[DEBUG create frais] payload =", {
         motif: String(data.motif).trim(),
         type: data.type,
-        description: data.description ?? "",
         montant: Number(data.montant),
-        devise, // ✅ devise libre
-        student_id: toRealmId(rawStudent),
-        year_id: toRealmId(rawYear),
-        section_id: sectionId,
-        classe_id: classeId,
+        devise,
+        student_id: rawStudent,
+        year_id: rawYear,
+        section_id: sectionId ?? null,
+        classe_id: classeId ?? null,
         numeroRecu,
         datePerception: data.datePerception ?? new Date(),
         mois: data.mois ?? "",
         trimestre: data.trimestre ?? "",
         modePaiement: data.modePaiement,
         referencePaiement: data.referencePaiement ?? "",
-        percu_par: data.percu_par ? toRealmId(data.percu_par) : null,
+        percu_par: percuParId ?? null,
+        statut: data.statut ?? "PAYE",
+        motifAnnulation: data.motifAnnulation ?? "",
+        observation: data.observation ?? "",
+      });*/
+
+      // ---------------------------------------------------------------------
+      // 7) Création
+      // ⚠️ RÈGLE : champs uuid optionnels → null (jamais "")
+      // ---------------------------------------------------------------------
+      const frais = await FraisModel.create({
+        motif: String(data.motif).trim(),
+        type: data.type,
+        montant: Number(data.montant),
+        devise,
+        student_id: rawStudent, // uuid requis
+        year_id: rawYear, // uuid requis
+        section_id: sectionId ?? null, // ✅ null si absent
+        classe_id: classeId ?? null, // ✅ null si absent
+        numeroRecu,
+        datePerception: data.datePerception ?? new Date(),
+        mois: data.mois ?? "",
+        trimestre: data.trimestre ?? "",
+        modePaiement: data.modePaiement,
+        referencePaiement: data.referencePaiement ?? "",
+        percu_par: percuParId ?? null, // ✅ null si absent
         statut: data.statut ?? "PAYE",
         motifAnnulation: data.motifAnnulation ?? "",
         observation: data.observation ?? "",
       });
 
+      // ---------------------------------------------------------------------
+      // 8) Populate + retour
+      // ---------------------------------------------------------------------
       const populated = await populateFrais(frais);
       return {
         data: populated,
@@ -242,10 +364,9 @@ export const fraisModule = {
     }
   },
 
-  /** Toutes les perceptions (populate) */
   find: async () => {
     try {
-      const list = await FraisModel.find();
+      const list = (await FraisModel.find()).reverse();
       const arr = Array.isArray(list) ? list : list ? [list] : [];
       const populated = await Promise.all(
         arr.map((f: any) => populateFrais(f)),
@@ -257,24 +378,26 @@ export const fraisModule = {
     }
   },
 
-  /** Filtres combinés */
   findWithFilters: async ({ filters = {} }: { filters?: Filters }) => {
     try {
       const query: any = {};
-      if (filters.student_id)
-        query.student_id = toRealmId(normalizeId(filters.student_id)!);
-      if (filters.year_id)
-        query.year_id = toRealmId(normalizeId(filters.year_id)!);
+      if (filters.student_id) {
+        const raw = normalizeId(filters.student_id);
+        if (raw) query.student_id = toRealmId(raw);
+      }
+      if (filters.year_id) {
+        const raw = normalizeId(filters.year_id);
+        if (raw) query.year_id = toRealmId(raw);
+      }
       if (filters.type) query.type = filters.type;
       if (filters.statut) query.statut = filters.statut;
       if (filters.modePaiement) query.modePaiement = filters.modePaiement;
       if (filters.devise) query.devise = filters.devise;
       if (filters.mois) query.mois = filters.mois;
 
-      let list = await FraisModel.find(query);
+      let list = (await FraisModel.find(query)).reverse();
       let arr = Array.isArray(list) ? list : list ? [list] : [];
 
-      // Filtres date post-query
       if (filters.from || filters.to) {
         arr = arr.filter((f: any) => {
           const d = new Date(f.datePerception).getTime();
@@ -300,7 +423,9 @@ export const fraisModule = {
       const raw = normalizeId(studentId);
       if (!raw)
         return { data: [], success: false, message: "studentId invalide" };
-      const list = await FraisModel.find({ student_id: toRealmId(raw) });
+      const list = await FraisModel.find({
+        student_id: toRealmId(raw),
+      });
       const arr = Array.isArray(list) ? list : list ? [list] : [];
       const populated = await Promise.all(
         arr.map((f: any) => populateFrais(f)),
@@ -342,14 +467,16 @@ export const fraisModule = {
     }
   },
 
-  /** Annuler un frais (soft : on garde la trace comptable) */
   annuler: async ({ id, motif }: { id: string; motif?: string }) => {
     try {
       const raw = normalizeId(id);
       if (!raw) return { message: "id invalide", success: false };
       const updated = await FraisModel.findByIdAndUpdate(
         toRealmId(raw),
-        { statut: "ANNULE", motifAnnulation: motif ?? "" },
+        {
+          statut: "ANNULE",
+          motifAnnulation: motif ?? "",
+        },
         { new: true },
       );
       if (!updated) return { message: "Frais non trouvé", success: false };
@@ -364,14 +491,16 @@ export const fraisModule = {
     }
   },
 
-  /** Rembourser un frais (soft) */
   rembourser: async ({ id, motif }: { id: string; motif?: string }) => {
     try {
       const raw = normalizeId(id);
       if (!raw) return { message: "id invalide", success: false };
       const updated = await FraisModel.findByIdAndUpdate(
         toRealmId(raw),
-        { statut: "REMBOURSE", motifAnnulation: motif ?? "" },
+        {
+          statut: "REMBOURSE",
+          motifAnnulation: motif ?? "",
+        },
         { new: true },
       );
       if (!updated) return { message: "Frais non trouvé", success: false };
@@ -386,7 +515,6 @@ export const fraisModule = {
     }
   },
 
-  /** Mise à jour (rare) */
   update: async ({ id, data }: { id: string; data: Partial<FraisInput> }) => {
     try {
       const raw = normalizeId(id);
@@ -396,11 +524,8 @@ export const fraisModule = {
 
       if (data.motif !== undefined) payload.motif = String(data.motif).trim();
       if (data.type !== undefined) payload.type = data.type;
-      if (data.description !== undefined)
-        payload.description = data.description;
       if (data.montant !== undefined) payload.montant = Number(data.montant);
 
-      // ✅ Devise libre : juste vérifier qu'elle n'est pas vide
       if (data.devise !== undefined) {
         const d = String(data.devise).trim();
         if (!d) return { message: "Devise obligatoire", success: false };
@@ -421,6 +546,11 @@ export const fraisModule = {
       if (data.observation !== undefined)
         payload.observation = data.observation;
 
+      // ⚠️ percu_par est un uuid optionnel → null, jamais ""
+      if (data.percu_par !== undefined) {
+        payload.percu_par = data.percu_par ? normalizeId(data.percu_par) : null;
+      }
+
       const updated = await FraisModel.findByIdAndUpdate(
         toRealmId(raw),
         payload,
@@ -438,7 +568,6 @@ export const fraisModule = {
     }
   },
 
-  /** ⚠️ À éviter en production : préférer `annuler` */
   delete: async ({ id }: { id: string }) => {
     try {
       const raw = normalizeId(id);
@@ -452,7 +581,6 @@ export const fraisModule = {
     }
   },
 
-  /** Statistiques pour dashboard école */
   stats: async ({
     yearId,
     from,
@@ -468,6 +596,7 @@ export const fraisModule = {
         const raw = normalizeId(yearId);
         if (raw) query.year_id = toRealmId(raw);
       }
+
       const list = await FraisModel.find(query);
       const arr = Array.isArray(list) ? list : list ? [list] : [];
       const filtered = arr.filter((f: any) => {

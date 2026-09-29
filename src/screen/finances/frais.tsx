@@ -1,11 +1,6 @@
 // FraisTablePage.tsx
-import React, {
-  useEffect,
-  useState,
-  useCallback,
-  useMemo,
-  useRef,
-} from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Receipt,
   Eye,
@@ -17,7 +12,6 @@ import {
   Check,
   Printer,
   Sparkles,
-  Info,
 } from "lucide-react";
 import {
   DataTable,
@@ -41,6 +35,48 @@ import {
 import { DatePickerInput } from "@mantine/dates";
 import { useDisclosure } from "@mantine/hooks";
 import { useConnecter } from "@/hooks/useConnecter";
+import { usePrintReceipt } from "@/hooks/usePrintReceipt";
+
+// ---------------------------------------------------------------------------
+// Helpers de nettoyage d'id
+// ---------------------------------------------------------------------------
+
+/**
+ * Extrait une string d'id propre, que l'entrée soit :
+ *  - une string simple
+ *  - un BSON UUID/ObjectId sérialisé (avec `UUID("...")` ou guillemets JSON)
+ *  - un objet { _id, id }
+ *
+ * ⚠️ Utilisé pour garantir que les ids envoyés au backend sont toujours
+ *    propres (pas de guillemets, pas de préfixe BSON).
+ */
+function cleanId(v: unknown): string {
+  if (v == null) return "";
+  let s = String(v).trim();
+
+  // Enlève les guillemets JSON
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    try {
+      s = JSON.parse(s);
+    } catch {
+      s = s.slice(1, -1);
+    }
+  }
+
+  // Enlève les préfixes UUID(...) / ObjectId(...)
+  s = s.replace(/^UUID\(["']?/i, "").replace(/["']?\)$/i, "");
+  s = s.replace(/^ObjectId\(["']?/i, "").replace(/["']?\)$/i, "");
+
+  return String(s).trim();
+}
+
+function docId(doc: any): string {
+  if (!doc) return "";
+  return cleanId(doc.id ?? doc._id ?? "");
+}
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -77,21 +113,13 @@ const MOIS_SCOLAIRES = [
 const TRIMESTRES = ["T1", "T2", "T3"] as const;
 
 // ---------------------------------------------------------------------------
-// 🧠 Logique comptable : champs de période selon le type de frais
+// Logique comptable
 // ---------------------------------------------------------------------------
-/**
- * Règles comptables scolaires :
- *  - Frais administratifs ponctuels (inscription, uniforme…) → aucune période
- *  - Prestations mensuelles (transport, cantine, internat) → mois uniquement
- *  - Frais trimestriels (examen, frais trimestriel) → trimestre uniquement
- *  - Scolarité → au choix de la famille : mois OU trimestre
- */
 function getPeriodFields(type: string): {
   showMois: boolean;
   showTrimestre: boolean;
 } {
   switch (type) {
-    // ─── Frais ponctuels (aucune période) ───
     case "INSCRIPTION":
     case "REINSCRIPTION":
     case "UNIFORME":
@@ -100,28 +128,23 @@ function getPeriodFields(type: string): {
     case "AUTRE":
       return { showMois: false, showTrimestre: false };
 
-    // ─── Prestations mensuelles ───
     case "TRANSPORT":
     case "CANTINE":
     case "INTERNAT":
       return { showMois: true, showTrimestre: false };
 
-    // ─── Frais trimestriels ───
     case "EXAMEN":
     case "FRAIS_TRIMESTRIEL":
       return { showMois: false, showTrimestre: true };
 
-    // ─── Scolarité : mois OU trimestre ───
     case "SCOLARITE":
       return { showMois: true, showTrimestre: true };
 
-    // ─── Fallback sûr ───
     default:
       return { showMois: false, showTrimestre: false };
   }
 }
 
-/** Libellé lisible du type (pour l'auto-motif). */
 function typeLabel(type: string): string {
   const map: Record<string, string> = {
     SCOLARITE: "Scolarité",
@@ -140,7 +163,6 @@ function typeLabel(type: string): string {
   return map[type] ?? "Frais";
 }
 
-/** Placeholder de motif contextuel. */
 function placeholderForMotif(
   type: string,
   showMois: boolean,
@@ -168,7 +190,6 @@ function placeholderForMotif(
   }
 }
 
-/** Placeholder de référence selon le mode de paiement. */
 function placeholderForReference(mode: string): string {
   switch (mode) {
     case "MOBILE_MONEY":
@@ -186,7 +207,20 @@ function placeholderForReference(mode: string): string {
 // Types
 // ---------------------------------------------------------------------------
 type EtsMoney = { name?: string; symbole?: string; Taux_dollar?: string };
-type EtsInfo = { _id?: string; money?: EtsMoney[]; [k: string]: any };
+type EtsInfo = {
+  _id?: string;
+  name?: string;
+  logo?: string;
+  pays?: string;
+  province?: string;
+  ville?: string;
+  adresse_complete?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  money?: EtsMoney[];
+  [k: string]: any;
+};
 
 type StudentLite = {
   id?: string;
@@ -206,7 +240,6 @@ type Frais = {
   _id?: string;
   motif: string;
   type: string;
-  description?: string;
   montant: number;
   devise: string;
   student_id: string;
@@ -232,7 +265,7 @@ type Frais = {
 };
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers affichage
 // ---------------------------------------------------------------------------
 function formatDate(d?: Date | string | null): string {
   if (!d) return "—";
@@ -302,6 +335,7 @@ function makeColumns(money: EtsMoney[] | undefined): ColumnDef<Frais>[] {
       key: "numeroRecu",
       header: "N° Reçu",
       sortable: true,
+      defaultVisible: false,
       getValue: (r) => r.numeroRecu ?? "",
       cell: (r) => (
         <span className="font-mono text-[10.5px] font-medium text-foreground">
@@ -378,7 +412,7 @@ function makeColumns(money: EtsMoney[] | undefined): ColumnDef<Frais>[] {
       key: "datePerception",
       header: "Date",
       sortable: true,
-      getValue: (r) => r.datePerception,
+      getValue: (r) => r.datePerception?.toString(),
       cell: (r) => <span>{formatDate(r.datePerception)}</span>,
     },
     {
@@ -390,6 +424,7 @@ function makeColumns(money: EtsMoney[] | undefined): ColumnDef<Frais>[] {
       key: "statut",
       header: "Statut",
       sortable: true,
+      defaultVisible: false,
       getValue: (r) => STATUT_LABELS[r.statut] ?? r.statut,
       cell: (r) => (
         <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-medium bg-muted text-foreground">
@@ -425,22 +460,93 @@ const filters: FilterDef<Frais>[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Modal Détails
+// Modal Détails — avec impression thermique
 // ---------------------------------------------------------------------------
 function FraisDetailsModal({
   frais,
   onClose,
   money,
+  ets,
 }: {
   frais: Frais | null;
   onClose: () => void;
   money?: EtsMoney[];
+  ets?: EtsInfo | null;
 }) {
+  const { printReceipt } = usePrintReceipt();
+  const [printing, setPrinting] = useState(false);
+  const [printError, setPrintError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPrintError(null);
+    setPrinting(false);
+  }, [frais]);
+
   if (!frais) return null;
   const s = frais.studentData;
+
+  const handlePrint = async () => {
+    setPrinting(true);
+    setPrintError(null);
+    try {
+      const deviseSymbole = getSymbole(frais.devise ?? "", money);
+      const result = await printReceipt({
+        ets: ets
+          ? {
+              name: ets.name,
+              logo: ets.logo,
+              pays: ets.pays,
+              province: ets.province,
+              ville: ets.ville,
+              adresse_complete: ets.adresse_complete,
+              phone: ets.phone,
+              email: ets.email,
+              website: ets.website,
+            }
+          : null,
+        student: s
+          ? {
+              fname: s.fname,
+              lname: s.lname,
+              fm_name: s.fm_name,
+              matricule: s.matricule,
+            }
+          : null,
+        frais: {
+          numeroRecu: frais.numeroRecu,
+          datePerception: frais.datePerception,
+          type: frais.type,
+          motif: frais.motif,
+          montant: frais.montant,
+          devise: frais.devise,
+          modePaiement: frais.modePaiement,
+          referencePaiement: frais.referencePaiement,
+          mois: frais.mois,
+          trimestre: frais.trimestre,
+          observation: frais.observation,
+          statut: STATUT_LABELS[frais.statut] ?? frais.statut,
+          yearData: frais.yearData,
+          classeData: frais.classeData,
+          sectionData: frais.sectionData,
+        },
+        deviseSymbole,
+        width: "58mm",
+        documentTitle: "REÇU DE PAIEMENT",
+      });
+
+      if (!result?.success) {
+        setPrintError(
+          result?.message || "L'impression du reçu a échoué. Réessayez.",
+        );
+      }
+    } finally {
+      setPrinting(false);
+    }
+  };
+
   return (
     <div
-      className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
+      className="fixed inset-0 z-999999 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
       onClick={onClose}
     >
       <div
@@ -450,9 +556,9 @@ function FraisDetailsModal({
         <div className="mb-4 flex items-start justify-between">
           <div className="flex items-center gap-3">
             {s?.picture ? (
-              <Avatar src={s.picture} size="md" radius="md" />
+              <Avatar src={s.picture} size={80} radius="md" />
             ) : (
-              <div className="h-9 w-9 rounded-full flex items-center justify-center bg-muted text-muted-foreground font-semibold text-xs border-2 border-border">
+              <div className="h-9 w-9 rounded-md flex items-center justify-center bg-muted text-muted-foreground font-semibold text-xs border-2 border-border">
                 {studentInitials(s)}
               </div>
             )}
@@ -532,14 +638,25 @@ function FraisDetailsModal({
           )}
         </div>
 
+        {printError && (
+          <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-[11.5px] text-muted-foreground">
+            {printError}
+          </p>
+        )}
+
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-1.5 text-[12px] font-medium text-muted-foreground hover:bg-muted transition-colors"
+            onClick={handlePrint}
+            disabled={printing}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-1.5 text-[12px] font-medium text-muted-foreground hover:bg-muted transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <Printer className="h-3.5 w-3.5" />
-            Imprimer
+            {printing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Printer className="h-3.5 w-3.5" />
+            )}
+            {printing ? "Impression…" : "Imprimer"}
           </button>
           <button
             type="button"
@@ -555,7 +672,7 @@ function FraisDetailsModal({
 }
 
 // ---------------------------------------------------------------------------
-// Modal Formulaire — INTELLIGENT + LOGIQUE COMPTABLE
+// Modal Formulaire
 // ---------------------------------------------------------------------------
 function FraisFormModal({
   opened,
@@ -564,6 +681,8 @@ function FraisFormModal({
   editing,
   money,
   defaultDevise,
+  presetStudentId,
+  presetType,
 }: {
   opened: boolean;
   onClose: () => void;
@@ -571,19 +690,24 @@ function FraisFormModal({
   editing: Frais | null;
   money?: EtsMoney[];
   defaultDevise: string;
+  presetStudentId?: string | null;
+  presetType?: string | null;
 }) {
   const { frais: FraisApi, Student, year: YearApi } = useConnecter();
+
+  const isLocked = Boolean(presetStudentId && presetType);
 
   const [students, setStudents] = useState<StudentLite[]>([]);
   const [years, setYears] = useState<YearLite[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(false);
 
-  const [studentId, setStudentId] = useState<string | null>(null);
+  const [studentId, setStudentId] = useState<string | null>(
+    presetStudentId ? cleanId(presetStudentId) : null,
+  );
   const [yearId, setYearId] = useState<string | null>(null);
-  const [type, setType] = useState<string>("SCOLARITE");
+  const [type, setType] = useState<string>(presetType ?? "SCOLARITE");
   const [motif, setMotif] = useState("");
   const [motifTouched, setMotifTouched] = useState(false);
-  const [description, setDescription] = useState("");
   const [montant, setMontant] = useState<number | "">("");
   const [devise, setDevise] = useState<string>(defaultDevise);
   const [datePerception, setDatePerception] = useState<Date | null>(new Date());
@@ -596,11 +720,17 @@ function FraisFormModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 🧠 Champs période selon le type (logique comptable)
   const periodFields = useMemo(() => getPeriodFields(type), [type]);
   const showPeriod = periodFields.showMois || periodFields.showTrimestre;
 
-  // 👇 Auto-focus sur le premier champ à l'ouverture
+  // Re-sync presets
+  useEffect(() => {
+    if (!opened) return;
+    if (presetStudentId) setStudentId(cleanId(presetStudentId));
+    if (presetType) setType(presetType);
+  }, [opened, presetStudentId, presetType]);
+
+  // Auto-focus
   useEffect(() => {
     if (opened) {
       setTimeout(() => {
@@ -640,16 +770,17 @@ function FraisFormModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
 
-  // Pré-remplir en édition
+  // Pré-remplir / reset
   useEffect(() => {
     if (!opened) return;
     if (editing) {
-      setStudentId(editing.student_id || editing.studentData?._id || null);
-      setYearId(editing.year_id || editing.yearData?._id || null);
+      setStudentId(
+        cleanId(editing.student_id || docId(editing.studentData)) || null,
+      );
+      setYearId(cleanId(editing.year_id || docId(editing.yearData)) || null);
       setType(editing.type || "SCOLARITE");
       setMotif(editing.motif || "");
       setMotifTouched(Boolean(editing.motif));
-      setDescription(editing.description || "");
       setMontant(editing.montant ?? "");
       setDevise(editing.devise || defaultDevise);
       setDatePerception(
@@ -661,12 +792,11 @@ function FraisFormModal({
       setReferencePaiement(editing.referencePaiement || "");
       setObservation(editing.observation || "");
     } else {
-      setStudentId(null);
+      setStudentId(presetStudentId ? cleanId(presetStudentId) : null);
       setYearId(null);
-      setType("SCOLARITE");
+      setType(presetType ?? "SCOLARITE");
       setMotif("");
       setMotifTouched(false);
-      setDescription("");
       setMontant("");
       setDevise(defaultDevise);
       setDatePerception(new Date());
@@ -678,27 +808,23 @@ function FraisFormModal({
     }
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened, editing, defaultDevise]);
+  }, [opened, editing, defaultDevise, presetStudentId, presetType]);
 
-  // 🧠 Reset des champs période quand le type change
+  // Reset période
   useEffect(() => {
     if (!periodFields.showMois) setMois(null);
     if (!periodFields.showTrimestre) setTrimestre(null);
   }, [periodFields.showMois, periodFields.showTrimestre]);
 
-  // 🧠 AUTO-MOTIF : régénère le motif si l'utilisateur ne l'a pas touché
+  // Auto-motif
   useEffect(() => {
     if (motifTouched) return;
     const parts: string[] = [typeLabel(type)];
-
-    // Période : seulement si le type la supporte
     if (periodFields.showMois && mois) parts.push(mois);
     else if (periodFields.showTrimestre && trimestre) parts.push(trimestre);
-
     setMotif(parts.join(" - "));
   }, [type, mois, trimestre, motifTouched, periodFields]);
 
-  // 🧠 Mois et Trimestre mutuellement exclusifs (SCOLARITE uniquement)
   const handleMoisChange = (v: string | null) => {
     setMois(v);
     if (v) setTrimestre(null);
@@ -708,12 +834,10 @@ function FraisFormModal({
     if (v) setMois(null);
   };
 
-  // 🧠 Reset référence quand on repasse en ESPECES
   useEffect(() => {
     if (modePaiement === "ESPECES") setReferencePaiement("");
   }, [modePaiement]);
 
-  // 🧠 Validation live
   const canSubmit = useMemo(() => {
     return (
       !!studentId &&
@@ -726,7 +850,11 @@ function FraisFormModal({
   }, [studentId, yearId, motif, montant, devise]);
 
   const handleSave = async () => {
-    if (!studentId || !yearId) {
+    // ⚠️ On nettoie les ids avant envoi
+    const cleanStudentId = cleanId(studentId);
+    const cleanYearId = cleanId(yearId);
+
+    if (!cleanStudentId || !cleanYearId) {
       setError("Élève et année scolaire obligatoires.");
       return;
     }
@@ -743,15 +871,13 @@ function FraisFormModal({
     setError(null);
     try {
       const payload = {
-        student_id: studentId,
-        year_id: yearId,
+        student_id: cleanStudentId,
+        year_id: cleanYearId,
         type,
         motif: motif.trim(),
-        description: description.trim(),
         montant: Number(montant),
         devise,
         datePerception: datePerception ?? new Date(),
-        // 🧠 On n'envoie la période que si le type la supporte
         mois: periodFields.showMois ? (mois ?? "") : "",
         trimestre: periodFields.showTrimestre ? (trimestre ?? "") : "",
         modePaiement,
@@ -760,7 +886,7 @@ function FraisFormModal({
       };
 
       const result = editing
-        ? await FraisApi.update({ id: editing.id, data: payload })
+        ? await FraisApi.update({ id: docId(editing), data: payload })
         : await FraisApi.create(payload);
 
       if (result?.success === false) {
@@ -777,7 +903,6 @@ function FraisFormModal({
     }
   };
 
-  // ⌨️ Ctrl/Cmd + Enter pour soumettre
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
@@ -785,34 +910,35 @@ function FraisFormModal({
     }
   };
 
-  // Options Selects
   const studentOptions = useMemo(
     () =>
-      students.map((s) => {
-        const id =
-          s.id ?? (s as any)._id?.toString?.() ?? String((s as any)._id);
-        return {
-          value: id,
-          label: `${studentFullName(s)}${s.matricule ? ` (${s.matricule})` : ""}`,
-          leftSection: s.picture ? (
-            <Avatar src={s.picture} size={22} radius="md" />
-          ) : (
-            <div className="h-[22px] w-[22px] rounded-full flex items-center justify-center bg-muted text-muted-foreground font-semibold text-[10px]">
-              {studentInitials(s)}
-            </div>
-          ),
-        };
-      }),
+      students
+        .map((s) => {
+          const id = docId(s);
+          return {
+            value: id,
+            label: `${studentFullName(s)}${s.matricule ? ` (${s.matricule})` : ""}`,
+            leftSection: s.picture ? (
+              <Avatar src={s.picture} size={22} radius="md" />
+            ) : (
+              <div className="h-[22px] w-[22px] rounded-full flex items-center justify-center bg-muted text-muted-foreground font-semibold text-[10px]">
+                {studentInitials(s)}
+              </div>
+            ),
+          };
+        })
+        .filter((o) => o.value),
     [students],
   );
 
   const yearOptions = useMemo(
     () =>
-      years.map((y) => {
-        const id =
-          y.id ?? (y as any)._id?.toString?.() ?? String((y as any)._id);
-        return { value: id, label: y.libelle ?? "—" };
-      }),
+      years
+        .map((y) => {
+          const id = docId(y);
+          return { value: id, label: y.libelle ?? "—" };
+        })
+        .filter((o) => o.value),
     [years],
   );
 
@@ -832,7 +958,6 @@ function FraisFormModal({
       });
   }, [money, defaultDevise]);
 
-  // 👇 Sync devise avec les options
   useEffect(() => {
     const values = deviseOptions.map((o) => o.value);
     if (values.length > 0 && !values.includes(devise)) {
@@ -844,10 +969,7 @@ function FraisFormModal({
   const currentSymbole = getSymbole(devise, money);
 
   const selectedStudentName = useMemo(() => {
-    const s = students.find((x) => {
-      const id = x.id ?? (x as any)._id?.toString?.() ?? String((x as any)._id);
-      return id === studentId;
-    });
+    const s = students.find((x) => docId(x) === studentId);
     return s ? studentFullName(s) : "";
   }, [students, studentId]);
 
@@ -859,12 +981,12 @@ function FraisFormModal({
       centered
       radius="md"
       size="lg"
+      p={"md"}
       closeOnClickOutside={!saving}
       closeOnEscape={!saving}
       withCloseButton={!saving}
     >
-      <div className="space-y-4" onKeyDown={handleKeyDown}>
-        {/* Élève */}
+      <div className="space-y-4 px-6" onKeyDown={handleKeyDown}>
         <Select
           label="Élève"
           placeholder={loadingRefs ? "Chargement…" : "Nom, matricule…"}
@@ -873,13 +995,12 @@ function FraisFormModal({
           onChange={setStudentId}
           searchable
           required
-          disabled={saving || loadingRefs}
+          disabled={saving || loadingRefs || (isLocked && !editing)}
           nothingFoundMessage="Aucun élève"
           maxDropdownHeight={280}
-          data-autofocus-target="true"
+          data-autofocus-target={isLocked && !editing ? undefined : "true"}
         />
 
-        {/* Année */}
         <Select
           label="Année scolaire"
           placeholder={loadingRefs ? "Chargement…" : "Choisir une année…"}
@@ -892,14 +1013,13 @@ function FraisFormModal({
           nothingFoundMessage="Aucune année"
         />
 
-        {/* Type + Motif */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Select
             label="Type de frais"
             data={FRAIS_TYPES.map((t) => ({ value: t, label: t }))}
             value={type}
             onChange={(v) => setType(v ?? "SCOLARITE")}
-            disabled={saving}
+            disabled={saving || (isLocked && !editing)}
             allowDeselect={false}
           />
           <TextInput
@@ -919,27 +1039,6 @@ function FraisFormModal({
           />
         </div>
 
-        {/* Info comptable : frais ponctuel sans période */}
-        {!showPeriod && (
-          <div className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2">
-            <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-            <p className="text-[11px] text-muted-foreground">
-              <span className="font-medium">Frais ponctuel</span> — aucune
-              période (mois / trimestre) ne s'applique à ce type de frais.
-            </p>
-          </div>
-        )}
-
-        <Textarea
-          label="Description (optionnel)"
-          value={description}
-          onChange={(e) => setDescription(e.currentTarget.value)}
-          disabled={saving}
-          minRows={2}
-          autosize
-        />
-
-        {/* Montant + Devise + Date */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <NumberInput
             label="Montant"
@@ -974,7 +1073,6 @@ function FraisFormModal({
           />
         </div>
 
-        {/* Période — affichée uniquement si le type le justifie */}
         {showPeriod && (
           <div
             className={
@@ -1019,7 +1117,6 @@ function FraisFormModal({
           </div>
         )}
 
-        {/* Paiement */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Select
             label="Mode de paiement"
@@ -1047,7 +1144,6 @@ function FraisFormModal({
           autosize
         />
 
-        {/* ✨ Résumé live */}
         {canSubmit && (
           <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 px-3 py-2">
             <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-primary" />
@@ -1085,7 +1181,7 @@ function FraisFormModal({
             Annuler
           </Button>
           <Button
-            color="primary"
+            className="bg-primary/80 hover:bg-primary"
             size="xs"
             onClick={handleSave}
             disabled={saving || !canSubmit}
@@ -1114,7 +1210,19 @@ function FraisFormModal({
 // ---------------------------------------------------------------------------
 function FraisTableContent() {
   const { frais: FraisApi, etablissement } = useConnecter();
+  const location = useLocation();
 
+  const navState = (location.state ?? {}) as {
+    studentId?: string;
+    type?: string;
+  };
+  const presetStudentId = navState.studentId
+    ? cleanId(navState.studentId)
+    : null;
+  const presetType = navState.type ?? null;
+  const isPresetMode = Boolean(presetStudentId && presetType);
+
+  const [etsInfo, setEtsInfo] = useState<EtsInfo | null>(null);
   const [etsMoney, setEtsMoney] = useState<EtsMoney[]>([]);
   const [defaultDevise, setDefaultDevise] = useState<string>("USD");
   const [etsLoaded, setEtsLoaded] = useState(false);
@@ -1140,6 +1248,7 @@ function FraisTableContent() {
         const money = Array.isArray(ets?.money)
           ? (ets!.money as EtsMoney[])
           : [];
+        setEtsInfo(ets ?? null);
         setEtsMoney(money);
         if (money.length > 0) {
           setDefaultDevise(money[0].name || money[0].symbole || "USD");
@@ -1181,14 +1290,24 @@ function FraisTableContent() {
   const [formOpened, formCtl] = useDisclosure(false);
   const [editing, setEditing] = useState<Frais | null>(null);
 
+  // Ouverture auto si preset
+  useEffect(() => {
+    if (isPresetMode) {
+      setEditing(null);
+      formCtl.open();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPresetMode, presetStudentId, presetType]);
+
   const fetchFrais = useCallback(async () => {
     setLoading(true);
     try {
       const res = await FraisApi.find();
+
       const list: any[] = Array.isArray(res) ? res : (res?.data ?? []);
       const normalized: Frais[] = list.map((f) => ({
         ...f,
-        id: f.id ?? f._id?.toString?.() ?? String(f._id),
+        id: cleanId(f.id ?? f._id),
         montant: Number(f.montant) || 0,
         datePerception: f.datePerception
           ? new Date(f.datePerception)
@@ -1311,7 +1430,10 @@ function FraisTableContent() {
     setProcessing(true);
     setProcessError(null);
     try {
-      const res = await FraisApi.annuler({ id: toAnnul.id, motif: annulMotif });
+      const res = await FraisApi.annuler({
+        id: docId(toAnnul),
+        motif: annulMotif,
+      });
       if (res?.success) {
         setAnnulOpened(false);
         setToAnnul(null);
@@ -1330,7 +1452,7 @@ function FraisTableContent() {
       if (!confirm(`Rembourser le reçu ${f.numeroRecu} ?`)) return;
       try {
         await FraisApi.rembourser({
-          id: f.id,
+          id: docId(f),
           motif: "Remboursement manuel",
         });
         await fetchFrais();
@@ -1417,6 +1539,7 @@ function FraisTableContent() {
         frais={viewed}
         onClose={() => setViewed(null)}
         money={etsMoney}
+        ets={etsInfo}
       />
 
       <style>{`.frais-annul-dialog { transform: translate(-50%, -50%); }`}</style>
@@ -1480,7 +1603,7 @@ function FraisTableContent() {
               Annuler
             </Button>
             <Button
-              color="primary"
+              className="bg-primary/90 hover:bg-primary"
               size="xs"
               onClick={confirmAnnul}
               disabled={processing}
@@ -1503,6 +1626,8 @@ function FraisTableContent() {
         editing={editing}
         money={etsMoney}
         defaultDevise={defaultDevise}
+        presetStudentId={presetStudentId}
+        presetType={presetType}
       />
     </>
   );

@@ -68,12 +68,6 @@ export const menuItems: MenuItem[] = [
         label: "Ajouter un élève",
         path: "/students/add",
       },
-      {
-        id: "students-enrollments",
-        icon: ClipboardList,
-        label: "Inscriptions",
-        path: "/students/enrollments",
-      },
     ],
   },
   {
@@ -83,23 +77,12 @@ export const menuItems: MenuItem[] = [
     path: "/activity",
     children: [
       {
-        id: "year-scholl",
-        icon: CalendarDaysIcon,
-        label: "Années scolaire",
-        path: "/activity/year",
+        id: "students-enrollments",
+        icon: ClipboardList,
+        label: "Inscriptions",
+        path: "/activity/enrollments",
       },
-      {
-        id: "frais-scolaire",
-        icon: DollarSign,
-        label: "Frais scolaire",
-        path: "/fin/frais",
-      },
-      {
-        id: "paie-frais",
-        icon: DollarSign,
-        label: "Recevoirs les frais",
-        path: "/activity/top-up",
-      },
+
       {
         id: "communication",
         icon: Timeline,
@@ -119,8 +102,14 @@ export const menuItems: MenuItem[] = [
     id: "classes",
     icon: School,
     label: "Organisation",
-    path: "/org",
+    path: "/org/year",
     children: [
+      {
+        id: "year-scholl",
+        icon: CalendarDaysIcon,
+        label: "Années scolaire",
+        path: "/org/year",
+      },
       {
         id: "dection-list",
         icon: Building2,
@@ -133,11 +122,31 @@ export const menuItems: MenuItem[] = [
         label: "Gestion des classes",
         path: "/org/classes",
       },
+    ],
+  },
+  {
+    id: "finace",
+    icon: School,
+    label: "Finances",
+    path: "/fin",
+    children: [
       {
-        id: "options",
-        icon: CalendarDays,
-        label: "Options",
-        path: "/org/option",
+        id: "frais-scolaire",
+        icon: DollarSign,
+        label: "Perception frais",
+        path: "/fin/frais",
+      },
+      {
+        id: "autres-frais-depenses",
+        icon: Building2,
+        label: "Depenses & Acquisition",
+        path: "/fin/depenses",
+      },
+      {
+        id: "rapport",
+        icon: UserCog,
+        label: "Rapport",
+        path: "/fin/Rapport",
       },
     ],
   },
@@ -151,7 +160,13 @@ export const menuItems: MenuItem[] = [
         id: "teachers-list",
         icon: UserCircle,
         label: "Professeurs",
-        path: "/teachers/list",
+        path: "/teachers",
+      },
+      {
+        id: "teachers-add",
+        icon: UserPlus,
+        label: "Ajouter",
+        path: "/teachers/add",
       },
       {
         id: "teachers-schedules",
@@ -182,7 +197,7 @@ export const menuItems: MenuItem[] = [
       {
         id: "subjects-programs",
         icon: BookMarked,
-        label: "Programmes",
+        label: "Attributions cours",
         path: "/subjects/programs",
       },
       {
