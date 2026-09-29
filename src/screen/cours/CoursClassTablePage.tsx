@@ -15,6 +15,7 @@ import {
   Hash,
   Percent,
   ListOrdered,
+  CalendarDays,
 } from "lucide-react";
 import {
   DataTable,
@@ -61,12 +62,20 @@ type TeacherLite = {
   picture?: string;
 };
 
+type AnneeLite = {
+  _id: string;
+  libelle?: string;
+  dateDebut?: Date | string;
+  dateFin?: Date | string;
+};
+
 type CoursClass = {
   _id: string;
   id?: string;
   classid: ClasseLite | null;
   coursid: CoursLite | null;
   teacherId?: TeacherLite | null;
+  yearId?: AnneeLite | null;
   max_score?: number;
   coefficient?: number;
   display_order?: number;
@@ -98,6 +107,11 @@ function classeLabel(c?: ClasseLite | null): string {
   const secName =
     typeof c.sections === "object" && c.sections ? c.sections.name : undefined;
   return [c.name, secName].filter(Boolean).join(" · ") || "—";
+}
+
+function yearLabel(y?: AnneeLite | null): string {
+  if (!y) return "—";
+  return y.libelle ?? "—";
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +182,18 @@ const columns: ColumnDef<CoursClass>[] = [
     ),
   },
   {
+    key: "yearId",
+    header: "Année",
+    sortable: true,
+    getValue: (r) => yearLabel(r.yearId),
+    cell: (r) => (
+      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium bg-muted text-foreground">
+        <CalendarDays className="h-2.5 w-2.5" />
+        {yearLabel(r.yearId)}
+      </span>
+    ),
+  },
+  {
     key: "coefficient",
     header: "Coef.",
     sortable: true,
@@ -228,6 +254,11 @@ const filters: FilterDef<CoursClass>[] = [
     label: "Classe",
     getValue: (r) => r.classid?.name ?? "",
   },
+  {
+    key: "annee",
+    label: "Année",
+    getValue: (r) => yearLabel(r.yearId),
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -287,6 +318,12 @@ function CoursClassDetailsModal({
             {teacherFullName(item.teacherId)}
           </p>
           <p>
+            <span className="text-foreground font-medium">
+              Année scolaire :
+            </span>{" "}
+            {yearLabel(item.yearId)}
+          </p>
+          <p>
             <span className="text-foreground font-medium">Coefficient :</span>{" "}
             {item.coefficient ?? "—"}
           </p>
@@ -337,16 +374,19 @@ function CoursClassFormModal({
     classe: ClasseApi,
     cours: CoursApi,
     Teacher: TeacherApi,
+    year: YearApi,
   } = useConnecter();
 
   const [classes, setClasses] = useState<ClasseLite[]>([]);
   const [coursList, setCoursList] = useState<CoursLite[]>([]);
   const [teachers, setTeachers] = useState<TeacherLite[]>([]);
+  const [years, setYears] = useState<AnneeLite[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(false);
 
   const [classId, setClassId] = useState<string | null>(null);
   const [coursId, setCoursId] = useState<string | null>(null);
   const [teacherId, setTeacherId] = useState<string | null>(null);
+  const [yearId, setYearId] = useState<string | null>(null);
   const [maxScore, setMaxScore] = useState<number | "">(20);
   const [coefficient, setCoefficient] = useState<number | "">(1);
   const [displayOrder, setDisplayOrder] = useState<number | "">(0);
@@ -362,10 +402,11 @@ function CoursClassFormModal({
     const load = async () => {
       setLoadingRefs(true);
       try {
-        const [clsRes, crsRes, teaRes] = await Promise.all([
+        const [clsRes, crsRes, teaRes, yearRes] = await Promise.all([
           ClasseApi?.find ? ClasseApi.find() : Promise.resolve({ data: [] }),
           CoursApi?.find ? CoursApi.find() : Promise.resolve({ data: [] }),
           TeacherApi.getAll({ page: 1, limit: 500 }),
+          YearApi?.find ? YearApi.find() : Promise.resolve({ data: [] }),
         ]);
 
         if (cancelled) return;
@@ -375,6 +416,8 @@ function CoursClassFormModal({
         const coursRaw = crsRes?.data ?? (Array.isArray(crsRes) ? crsRes : []);
         const teachersRaw =
           teaRes?.data ?? (Array.isArray(teaRes) ? teaRes : []);
+        const yearsRaw =
+          yearRes?.data ?? (Array.isArray(yearRes) ? yearRes : []);
 
         setClasses(
           classesRaw.map((c: any) => ({
@@ -403,6 +446,15 @@ function CoursClassFormModal({
             picture: t.picture,
           })),
         );
+
+        setYears(
+          yearsRaw.map((y: any) => ({
+            _id: y._id?.toString?.() ?? y.id ?? String(y._id),
+            libelle: y.libelle,
+            dateDebut: y.dateDebut,
+            dateFin: y.dateFin,
+          })),
+        );
       } catch (e) {
         console.error("Erreur chargement référentiels:", e);
       } finally {
@@ -424,6 +476,7 @@ function CoursClassFormModal({
       setClassId(editing.classid?._id ?? null);
       setCoursId(editing.coursid?._id ?? null);
       setTeacherId(editing.teacherId?._id ?? null);
+      setYearId(editing.yearId?._id ?? null);
       setMaxScore(
         typeof editing.max_score === "number" ? editing.max_score : 20,
       );
@@ -437,6 +490,7 @@ function CoursClassFormModal({
       setClassId(null);
       setCoursId(null);
       setTeacherId(null);
+      setYearId(null);
       setMaxScore(20);
       setCoefficient(1);
       setDisplayOrder(0);
@@ -461,6 +515,7 @@ function CoursClassFormModal({
         classid: classId,
         coursid: coursId,
         teacherId: teacherId || null,
+        yearId: yearId || null,
         max_score:
           typeof maxScore === "number" && !isNaN(maxScore) ? maxScore : 20,
         coefficient:
@@ -543,6 +598,15 @@ function CoursClassFormModal({
     [teachers],
   );
 
+  const yearOptions = useMemo(
+    () =>
+      years.map((y) => ({
+        value: y._id,
+        label: y.libelle ?? "—",
+      })),
+    [years],
+  );
+
   return (
     <Modal
       opened={opened}
@@ -602,6 +666,25 @@ function CoursClassFormModal({
           clearable
           disabled={saving || loadingRefs || teachers.length === 0}
           nothingFoundMessage="Aucun enseignant"
+          maxDropdownHeight={280}
+        />
+
+        <Select
+          label="Année scolaire (optionnel)"
+          placeholder={
+            loadingRefs
+              ? "Chargement…"
+              : years.length === 0
+                ? "Aucune année disponible"
+                : "Choisir une année…"
+          }
+          data={yearOptions}
+          value={yearId}
+          onChange={setYearId}
+          searchable
+          clearable
+          disabled={saving || loadingRefs || years.length === 0}
+          nothingFoundMessage="Aucune année"
           maxDropdownHeight={280}
         />
 
@@ -739,7 +822,8 @@ function CoursClassTableContent() {
         (c) =>
           (c.coursid?.name ?? "").toLowerCase().includes(q) ||
           (c.classid?.name ?? "").toLowerCase().includes(q) ||
-          teacherFullName(c.teacherId).toLowerCase().includes(q),
+          teacherFullName(c.teacherId).toLowerCase().includes(q) ||
+          yearLabel(c.yearId).toLowerCase().includes(q),
       );
     }
 
@@ -748,6 +832,9 @@ function CoursClassTableContent() {
     }
     if (activeFilters.classe) {
       arr = arr.filter((c) => (c.classid?.name ?? "") === activeFilters.classe);
+    }
+    if (activeFilters.annee) {
+      arr = arr.filter((c) => yearLabel(c.yearId) === activeFilters.annee);
     }
 
     arr.sort((a, b) => {
@@ -897,7 +984,7 @@ function CoursClassTableContent() {
         loading={loading}
         searchPlaceholder="Rechercher une attribution…"
         searchFields={(r) =>
-          `${r.coursid?.name ?? ""} ${r.classid?.name ?? ""} ${teacherFullName(r.teacherId)}`
+          `${r.coursid?.name ?? ""} ${r.classid?.name ?? ""} ${teacherFullName(r.teacherId)} ${yearLabel(r.yearId)}`
         }
         filters={filters}
         defaultSortKey="coursid"

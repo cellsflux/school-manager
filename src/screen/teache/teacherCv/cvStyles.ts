@@ -7,7 +7,11 @@ export const CV_CSS = `
 .cv-sheet svg{flex:none}
 .cv-serif{font-family:Georgia,"Times New Roman",serif}
 .cv-dark{background:var(--grad);color:#fff}
-.cv-flex{display:flex;align-items:stretch;min-height:1123px}
+.cv-flex{display:flex;align-items:stretch;min-height:calc(1123px - var(--strip))}
+.cv-ets{height:48px;display:flex;align-items:center;gap:10px;padding:0 36px;background:#fff;border-bottom:1px solid #e5e7eb;font-size:10.5px;color:#4b5563}
+.cv-ets img{height:28px;width:28px;object-fit:contain}
+.cv-ets b{font-size:12.5px;color:#111827;white-space:nowrap}
+.cv-ets span{flex:1;text-align:right}
 .cv-aside{flex:none;padding:34px 24px}
 .cv-main{flex:1;min-width:0;padding:38px 34px}
 .cv-pad{padding:30px 36px}

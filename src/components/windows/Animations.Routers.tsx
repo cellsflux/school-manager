@@ -26,6 +26,7 @@ import AddTeacher from "@/screen/teache/add";
 import TeacherDetailPage from "@/screen/teache/TeacherDetailPage";
 import CoursTablePage from "@/screen/cours/CoursTablePage";
 import CoursClassTablePage from "@/screen/cours/CoursClassTablePage";
+import TimetablePage from "@/screen/teache/TimetablePage";
 // Importez vos autres screens ici
 
 export default function Navigations() {
@@ -66,6 +67,7 @@ export default function Navigations() {
           <Route path="/teachers" element={<TeacherTablePage />} />
           <Route path="/teachers/add" element={<AddTeacher />} />
           <Route path="/teachers/view/:id" element={<TeacherDetailPage />} />
+          <Route path="/teachers/schedules" element={<TimetablePage />} />
 
           <Route path="/subjects/courses" element={<CoursTablePage />} />
           <Route path="/subjects/programs" element={<CoursClassTablePage />} />

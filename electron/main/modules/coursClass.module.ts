@@ -3,19 +3,21 @@ import { CoursClassModel } from "../../databases/models/cours.class.model";
 import { ClasseModel } from "../../databases/models/classes.model";
 import { CoursModel } from "../../databases/models/cours.model";
 import { TeacherModel } from "../../databases/models/Teacher.model";
+import { AnneeModel } from "../../databases/models/annee.model";
 import { catchError } from "../utils/errorrequeste";
 
 type CoursClassInput = {
   classid: string;
   coursid: string;
   teacherId?: string;
+  yearId?: string;
   max_score?: number;
   coefficient?: number;
   display_order?: number;
 };
 
 // Single source of truth for which relations to resolve
-const POPULATE = ["classid", "coursid", "teacherId"];
+const POPULATE = ["classid", "coursid", "teacherId", "yearId"];
 
 // ---------------------------------------------------------------------------
 // Module CoursClass
@@ -54,6 +56,15 @@ export const coursClassModule = {
         }
       }
 
+      if (data.yearId) {
+        const yearExists = await AnneeModel.exists({
+          _id: data.yearId as any,
+        });
+        if (!yearExists) {
+          return { message: "Année scolaire introuvable", success: false };
+        }
+      }
+
       const max_score =
         typeof data.max_score === "number"
           ? data.max_score
@@ -77,6 +88,7 @@ export const coursClassModule = {
         classid: data.classid as any,
         coursid: data.coursid as any,
         teacherId: (data.teacherId ?? null) as any,
+        yearId: (data.yearId ?? null) as any,
         max_score: isNaN(max_score) ? 20 : max_score,
         coefficient: isNaN(coefficient) ? 1 : coefficient,
         display_order: isNaN(display_order) ? 0 : display_order,
@@ -174,6 +186,20 @@ export const coursClassModule = {
     }
   },
 
+  /** Filter by year */
+  findByYear: async ({ yearId }: { yearId: string }) => {
+    try {
+      const list = await CoursClassModel.find(
+        { yearId: yearId as any },
+        { populate: POPULATE as any },
+      );
+      return { data: list, success: true };
+    } catch (error) {
+      catchError(error);
+      return { data: [], success: false };
+    }
+  },
+
   /** Update a cours-class */
   update: async ({
     id,
@@ -207,6 +233,19 @@ export const coursClassModule = {
           if (!exists)
             return { message: "Enseignant introuvable", success: false };
           payload.teacherId = data.teacherId;
+        }
+      }
+
+      if (data.yearId !== undefined) {
+        if (data.yearId === null || data.yearId === "") {
+          payload.yearId = null;
+        } else {
+          const exists = await AnneeModel.exists({
+            _id: data.yearId as any,
+          });
+          if (!exists)
+            return { message: "Année scolaire introuvable", success: false };
+          payload.yearId = data.yearId;
         }
       }
 

@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft, Pencil, Loader2, AlertCircle, Printer, Download, Palette, Check, ChevronDown, LayoutTemplate, RotateCcw,
+  ArrowLeft, Pencil, Loader2, AlertCircle, Printer, Download, Palette, Check, ChevronDown, LayoutTemplate, RotateCcw, CreditCard,
 } from "lucide-react";
 import { useConnecter } from "@/hooks/useConnecter";
 import { usePrintCv, A4_W, A4_H } from "@/hooks/usePrintCv";
@@ -11,6 +11,8 @@ import {
   CV_LAYOUTS, CV_LAYOUT_LIST, CV_LAYOUT_CATEGORIES, DEFAULT_CV_LAYOUT, type CvLayoutKey,
 } from "@/utils/teacherCvLayouts";
 import { CvSheet, type Teacher } from "./teacherCv/CvSheet";
+import TeacherCardModal from "./teacherCard/TeacherCardModal";
+import { useEtablissement } from "@/hooks/useEtablissement";
 
 // Persistance
 const LS_THEME = "__cv_theme_teacher__";
@@ -173,6 +175,8 @@ export default function TeacherDetailPage() {
   const [themeKey, setThemeKey] = useState<CvThemeKey>(() => read(LS_THEME, CV_THEMES, DEFAULT_CV_THEME));
   const [layoutKey, setLayoutKey] = useState<CvLayoutKey>(() => read(LS_LAYOUT, CV_LAYOUTS, DEFAULT_CV_LAYOUT));
   const theme = CV_THEMES[themeKey];
+  const { ets } = useEtablissement();
+  const [cardOpen, setCardOpen] = useState(false);
 
   const onTheme = (k: CvThemeKey) => { setThemeKey(k); write(LS_THEME, k); };
   const onLayout = (k: CvLayoutKey) => { setLayoutKey(k); write(LS_LAYOUT, k); };
@@ -229,6 +233,9 @@ export default function TeacherDetailPage() {
           <button disabled={busy} className={btn} onClick={() => printCv({ element: sheetRef.current, fileName })}>
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}<span className="hidden sm:inline">Imprimer</span>
           </button>
+          <button className={btn} onClick={() => setCardOpen(true)}>
+            <CreditCard className="h-3.5 w-3.5" /><span className="hidden sm:inline">Carte</span>
+          </button>
           <button onClick={() => navigate("/teachers/add", { state: { teacher } })}
             className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-medium text-white shadow-sm hover:opacity-90" style={{ background: theme.primary }}>
             <Pencil className="h-3.5 w-3.5" /><span className="hidden sm:inline">Modifier</span>
@@ -236,8 +243,9 @@ export default function TeacherDetailPage() {
         </div>
       </div>
       <Preview>
-        <CvSheet ref={sheetRef} teacher={teacher} theme={theme} layout={layoutKey} />
+        <CvSheet ref={sheetRef} teacher={teacher} theme={theme} layout={layoutKey} ets={ets} />
       </Preview>
+      <TeacherCardModal open={cardOpen} onClose={() => setCardOpen(false)} teacher={teacher as any} ets={ets} />
     </div>
   );
 }
