@@ -34,6 +34,7 @@ import {
   DollarSign,
   Timeline,
   UserPlus,
+  TimelineIcon,
 } from "lucide-react";
 export interface MenuItem {
   id: string;
@@ -173,6 +174,12 @@ export const menuItems: MenuItem[] = [
         icon: Calendar,
         label: "Emplois du temps",
         path: "/teachers/schedules",
+      },
+      {
+        id: "teachers-attendeces",
+        icon: TimelineIcon,
+        label: "Presences",
+        path: "/teachers/attendeces",
       },
       {
         id: "teachers-evaluations",

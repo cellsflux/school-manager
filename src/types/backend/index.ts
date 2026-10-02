@@ -3,3 +3,4 @@ export * from "./etablissment";
 export * from "./teacher";
 
 export * from "./schedule.types";
+export * from "./Attendanceteacher";

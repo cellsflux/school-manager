@@ -15,6 +15,8 @@ import { coursModule } from "./cours.module";
 import { coursClassModule } from "./coursClass.module";
 import { scheduleModule } from "./schedule.module";
 import { weekConfigModule } from "./weekConfig.module";
+import { attendanceTeacherModule } from "./attendece/Attendanceteacher.module";
+import { speechModule } from "./Speech.module";
 
 export const modules = {
   user: userModule,
@@ -33,6 +35,8 @@ export const modules = {
   coursClass: coursClassModule,
   schedule: scheduleModule,
   weekConfig: weekConfigModule,
+  attendanceTeacher: attendanceTeacherModule,
+  speech: speechModule,
 };
 
 export type Modules = typeof modules;
